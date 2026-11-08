@@ -1,0 +1,9 @@
+{
+  "name": "dots-bot",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test tests/"
+  }
+}
