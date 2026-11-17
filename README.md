@@ -54,7 +54,8 @@ dots-bot/
 | [SKILL.md](SKILL.md) | правила проекта и подсказки для ИИ-ассистента |
 | [docs/api.md](docs/api.md) | формат запроса и ответа, правила API |
 | [docs/STRATEGY.md](docs/STRATEGY.md) | общая теория и варианты стратегии |
-| [docs/STRATEGY_V03.md](docs/STRATEGY_V03.md) | текущая реализация v0.3 и её ограничения |
+| [docs/STRATEGY_V03.md](docs/STRATEGY_V03.md) | реализация minimax v0.3 и её ограничения |
+| [docs/STRATEGY_V031.md](docs/STRATEGY_V031.md) | v0.3.1: избегание своих и чужих закрытых территорий |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | перезапуск, логи, смена адреса, откат версии |
 | [docs/ideas/README.md](docs/ideas/README.md) | как вести идеи, статусы |
 | [docs/ideas/algorithm.md](docs/ideas/algorithm.md) | идеи по алгоритму бота |

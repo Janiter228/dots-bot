@@ -1,5 +1,5 @@
 /**
- * Dots Bot v0.3 — ограниченный двухполуходовый поиск.
+ * Dots Bot v0.3.1 — поиск с избеганием закрытых территорий.
  *
  * Что делает алгоритм:
  *  - использует правила связности из спецификации: точки соединяются по 8
@@ -254,7 +254,7 @@ function positionalScore(
   return score;
 }
 
-function generateCandidateIndices(board, width, height, ownCode, enemyCode, limit) {
+function generateCandidateIndices(board, width, height, ownCode, enemyCode, limit, forbiddenMask) {
   const size = board.length;
   const marked = new Uint8Array(size);
   const candidates = [];
@@ -278,7 +278,7 @@ function generateCandidateIndices(board, width, height, ownCode, enemyCode, limi
         const ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
         const next = coordIndex(nx, ny, width);
-        if (board[next] !== EMPTY || marked[next]) continue;
+        if (board[next] !== EMPTY || marked[next] || forbiddenMask[next]) continue;
         marked[next] = 1;
         candidates.push(next);
       }
@@ -294,11 +294,20 @@ function generateCandidateIndices(board, width, height, ownCode, enemyCode, limi
         const y = cy + dy;
         if (x < 0 || y < 0 || x >= width || y >= height) continue;
         const index = coordIndex(x, y, width);
-        if (board[index] === EMPTY && !marked[index]) {
+        if (board[index] === EMPTY && !marked[index] && !forbiddenMask[index]) {
           marked[index] = 1;
           candidates.push(index);
         }
       }
+    }
+  }
+
+  // Если рядом с фронтиром нет безопасных клеток, ищем любую свободную
+  // клетку вне закрытых территорий. Только если все свободные клетки уже
+  // находятся в таких зонах, разрешаем вынужденный ход внутри зоны.
+  if (candidates.length === 0) {
+    for (let index = 0; index < size; index += 1) {
+      if (board[index] === EMPTY && !forbiddenMask[index]) candidates.push(index);
     }
   }
 
@@ -347,12 +356,24 @@ function applyMove(board, index, width, height, playerCode, enemyCode, enemyTerr
 }
 
 function rankMoves(board, width, height, playerCode, enemyCode, limit, deadline) {
+  // Любая клетка внутри закрытой области нежелательна:
+  // - в чужой территории наша точка сразу погибнет и даст сопернику очко;
+  // - в своей территории ход не приносит очков и расходует очередь, хотя
+  //   такая клетка могла бы остаться ловушкой для точки соперника.
+  const ownTerritory = analyzeEnclosures(
+    board, width, height, playerCode, enemyCode,
+  ).enclosedMask;
   const enemyTerritory = analyzeEnclosures(
     board, width, height, enemyCode, playerCode,
   ).enclosedMask;
+  const forbiddenMask = new Uint8Array(board.length);
+  for (let i = 0; i < board.length; i += 1) {
+    if (ownTerritory[i] || enemyTerritory[i]) forbiddenMask[i] = 1;
+  }
+
   const rawCandidates = generateCandidateIndices(
     board, width, height, playerCode, enemyCode,
-    Math.max(limit * CONFIG.oversample, limit),
+    Math.max(limit * CONFIG.oversample, limit), forbiddenMask,
   );
   const groupsOwn = buildGroups(board, width, height, playerCode);
   const groupsEnemy = buildGroups(board, width, height, enemyCode);
@@ -529,4 +550,4 @@ export function chooseMove(request) {
   return { x: bestIndex % width, y: Math.floor(bestIndex / width) };
 }
 
-export const BOT_VERSION = '0.3.0';
+export const BOT_VERSION = '0.3.1';

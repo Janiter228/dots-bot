@@ -114,3 +114,37 @@ test('бот работает, когда на поле осталось мал�
   const move = chooseMove(game({ width, height, red, blue }));
   assert.ok([[2, 2], [4, 4]].some(([x, y]) => move.x === x && move.y === y));
 });
+
+
+test('бот избегает пустых клеток внутри собственной закрытой территории', () => {
+  // Красные точки образуют замкнутую рамку. Центр принадлежит нашей
+  // территории: ставить туда свою точку невыгодно.
+  const red = [
+    [1, 1], [2, 1], [3, 1],
+    [1, 2],          [3, 2],
+    [1, 3], [2, 3], [3, 3],
+  ];
+  const move = chooseMove(game({ width: 5, height: 5, you: 'red', red }));
+  assert.notDeepEqual(move, { x: 2, y: 2 });
+});
+
+test('бот за blue также избегает территории, замкнутой его цветом', () => {
+  const blue = [
+    [1, 1], [2, 1], [3, 1],
+    [1, 2],          [3, 2],
+    [1, 3], [2, 3], [3, 3],
+  ];
+  const move = chooseMove(game({ width: 5, height: 5, you: 'blue', blue }));
+  assert.notDeepEqual(move, { x: 2, y: 2 });
+});
+
+test('если все свободные клетки находятся в закрытой зоне, бот всё равно делает допустимый ход', () => {
+  const red = [];
+  for (let y = 0; y < 3; y += 1) {
+    for (let x = 0; x < 3; x += 1) {
+      if (x !== 1 || y !== 1) red.push([x, y]);
+    }
+  }
+  const move = chooseMove(game({ width: 3, height: 3, you: 'red', red }));
+  assert.deepEqual(move, { x: 1, y: 1 });
+});

@@ -30,7 +30,7 @@ test('GET /v1/info возвращает информацию о боте', async
   const data = await response.json();
   assert.equal(response.status, 200);
   assert.equal(data.specVersion, 'v1');
-  assert.equal(data.version, '0.3.0');
+  assert.equal(data.version, '0.3.1');
 });
 
 test('POST /v1/move возвращает свободную клетку на пустом поле', async () => {
