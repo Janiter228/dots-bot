@@ -70,3 +70,47 @@ test('бот на почти заполненном поле возвращае�
   }));
   assert.deepEqual(move, { x: 1, y: 1 });
 });
+
+test('бот с цветом blue также находит немедленный захват', () => {
+  const blue = [
+    [1, 1], [3, 1],
+    [1, 2], [3, 2],
+    [1, 3], [2, 3], [3, 3],
+  ];
+  const move = chooseMove(game({ you: 'blue', red: [[2, 2]], blue }));
+  assert.deepEqual(move, { x: 2, y: 1 });
+});
+
+test('бот выбирает только свободную клетку на большом поле 100x100', () => {
+  const red = [];
+  const blue = [];
+  for (let i = 0; i < 450; i += 1) {
+    const index = (i * 37 + 11) % 10_000;
+    const x = index % 100;
+    const y = Math.floor(index / 100);
+    (i % 2 === 0 ? red : blue).push([x, y]);
+  }
+  const request = game({ width: 100, height: 100, red, blue });
+  const move = chooseMove(request);
+  assert.ok(move);
+  assert.ok(move.x >= 0 && move.x < 100);
+  assert.ok(move.y >= 0 && move.y < 100);
+  const key = `${move.x},${move.y}`;
+  const occupied = [...red, ...blue].some(([x, y]) => `${x},${y}` === key);
+  assert.equal(occupied, false);
+});
+
+test('бот работает, когда на поле осталось мало свободных клеток', () => {
+  const width = 6;
+  const height = 6;
+  const red = [];
+  const blue = [];
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if ((x === 2 && y === 2) || (x === 4 && y === 4)) continue;
+      (x + y) % 2 === 0 ? red.push([x, y]) : blue.push([x, y]);
+    }
+  }
+  const move = chooseMove(game({ width, height, red, blue }));
+  assert.ok([[2, 2], [4, 4]].some(([x, y]) => move.x === x && move.y === y));
+});

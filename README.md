@@ -8,6 +8,8 @@
 ```bash
 npm start          # сервер на порту 4003 (нужен Node.js 20+)
 npm test           # автотесты
+npm run bench     # скорость выбора хода на поле 100×100
+npm run bench     # скорость выбора хода на поле 100×100
 ```
 
 Через Docker: `docker compose up -d --build`.
@@ -51,7 +53,8 @@ dots-bot/
 |---|---|
 | [SKILL.md](SKILL.md) | правила проекта и подсказки для ИИ-ассистента |
 | [docs/api.md](docs/api.md) | формат запроса и ответа, правила API |
-| [docs/STRATEGY.md](docs/STRATEGY.md) | как бот выбирает ход (сдаём преподавателям) |
+| [docs/STRATEGY.md](docs/STRATEGY.md) | общая теория и варианты стратегии |
+| [docs/STRATEGY_V03.md](docs/STRATEGY_V03.md) | текущая реализация v0.3 и её ограничения |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | перезапуск, логи, смена адреса, откат версии |
 | [docs/ideas/README.md](docs/ideas/README.md) | как вести идеи, статусы |
 | [docs/ideas/algorithm.md](docs/ideas/algorithm.md) | идеи по алгоритму бота |

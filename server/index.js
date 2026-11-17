@@ -182,7 +182,7 @@ export function createBotServer({ botToken = process.env.BOT_TOKEN } = {}) {
     if (req.method === 'GET' && url.pathname === '/v1/info') {
       sendJson(res, 200, {
         name: 'Dots Bot',
-        version: '0.2.0',
+        version: '0.3.0',
         project: 'dots',
         specVersion: 'v1',
       });
