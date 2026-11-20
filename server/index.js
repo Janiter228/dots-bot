@@ -1,7 +1,7 @@
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chooseMove } from '../bot/index.js';
+import { chooseMove, BOT_VERSION } from '../bot/index.js';
 
 const PORT = Number(process.env.PORT || 4003);
 const BODY_LIMIT_BYTES = 8 * 1024 * 1024;
@@ -267,7 +267,35 @@ const isMainModule = process.argv[1] &&
 
 if (isMainModule) {
   const server = createBotServer();
+  const useColor = !('NO_COLOR' in process.env) && Boolean(process.stdout.isTTY);
+  const paint = (text, code) => useColor ? `\x1b[${code}m${text}\x1b[0m` : text;
+  const line = (label, value) => console.log(`  ${paint(label.padEnd(16), '90')}${value}`);
+
+  server.on('error', (error) => {
+    console.error(`\n  ${paint('ОШИБКА ЗАПУСКА', '1;31')}`);
+    console.error(error.code === 'EADDRINUSE'
+      ? `  Порт ${PORT} уже занят. Остановите другой сервер или задайте PORT.`
+      : `  ${error.message}`);
+    console.error('');
+    process.exitCode = 1;
+  });
+
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Dots bot API listening on port ${PORT}`);
+    const actualPort = server.address().port;
+    console.log('');
+    console.log(`  ${paint('●', '96')} ${paint('ТОЧКИ', '1;97')} ${paint('/ DOTS BOT', '96')} ${paint(`v${BOT_VERSION}`, '90')}`);
+    console.log(`  ${paint('─'.repeat(54), '90')}`);
+    console.log(`  ${paint('ГОТОВ К ИГРЕ', '1;32')}  ${paint('HTTP-сервер запущен', '90')}`);
+    console.log('');
+    line('Адрес', paint(`http://localhost:${actualPort}`, '1;96'));
+    line('Доступ', 'Все сетевые интерфейсы (0.0.0.0)');
+    line('Проверка', `GET  http://localhost:${actualPort}/v1/health`);
+    line('Информация', 'GET  /v1/info');
+    line('Ход бота', 'POST /v1/move');
+    line('Авторизация', process.env.BOT_TOKEN ? 'Включена · Bearer-токен' : 'Без токена');
+    console.log('');
+    line('Играть', 'Откройте web/index.html в браузере');
+    line('Остановить', paint('Ctrl+C', '1;93'));
+    console.log(`  ${paint('─'.repeat(54), '90')}\n`);
   });
 }
