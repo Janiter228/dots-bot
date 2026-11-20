@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Точки — человек против бота</title>
+  <style>
+    :root { color-scheme: dark; font: 15px/1.5 system-ui, sans-serif; --bg:#0b1221; --panel:#152139; --line:#2d4060; --muted:#a7bad4; --red:#ff6578; --blue:#69bcff; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:#eef4ff; }
+    main { max-width:1440px; margin:auto; padding:24px; }
+    h1 { margin:0; font-size:clamp(24px,4vw,36px); letter-spacing:-.04em; }
+    h2 { font-size:17px; margin:0 0 12px; }
+    p { color:var(--muted); margin:6px 0 18px; }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px; }
+    form { display:flex; flex-wrap:wrap; gap:14px; align-items:end; }
+    label { display:grid; gap:6px; font-size:13px; color:var(--muted); }
+    .address { flex:1; min-width:220px; }
+    input, select, button { font:inherit; border:1px solid var(--line); border-radius:9px; padding:10px 12px; background:#0d182c; color:#eef4ff; }
+    input[type=range] { padding:0; accent-color:var(--blue); width:140px; }
+    button { cursor:pointer; font-weight:650; }
+    button.primary { background:#456bea; border-color:#456bea; }
+    button:hover { filter:brightness(1.15); }
+    button:disabled { opacity:.5; cursor:default; }
+    :focus-visible { outline:3px solid var(--blue); outline-offset:3px; }
+    .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:16px 0; }
+    .stat { padding:14px 18px; }
+    .stat small { display:block; color:var(--muted); }
+    .stat strong { font-size:24px; }
+    .red { color:var(--red); } .blue { color:var(--blue); }
+    .layout { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:16px; }
+    .toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:16px; margin-bottom:12px; }
+    .toolbar label { display:flex; align-items:center; }
+    #status { flex:1; font-weight:650; }
+    #viewport { overflow:auto; max-height:70vh; min-height:300px; background:#0d182c; border:1px solid var(--line); border-radius:10px; }
+    canvas { display:block; touch-action:pan-x pan-y; }
+    .legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:12px; color:var(--muted); font-size:13px; }
+    #log { list-style:none; margin:0; padding:0; max-height:480px; overflow:auto; font-size:13px; }
+    #log li { border-top:1px solid var(--line); padding:10px 0; overflow-wrap:anywhere; }
+    #log time { color:var(--muted); display:block; font-size:11px; }
+    #log .error { color:#ffb0ba; }
+    details { margin-top:16px; color:var(--muted); }
+    summary { cursor:pointer; color:#eef4ff; font-weight:650; }
+    .note { font-size:13px; margin:12px 0 0; }
+    @media(max-width:850px) { .layout { grid-template-columns:1fr; } #log { max-height:220px; } main { padding:14px; } }
+    @media(max-width:500px) { .stats { grid-template-columns:repeat(2,1fr); } }
+  </style>
+</head>
+<body>
+<main>
+  <header><h1>Точки <span class="blue">/</span> игровая площадка</h1><p>Человек против HTTP-бота · красные начинают · без установки библиотек</p></header>
+  <form id="settings" class="panel">
+    <label class="address">Адрес бота<input id="address" type="url" value="http://localhost:4003" required spellcheck="false"></label>
+    <label>Поле<select id="size"><option value="20">20 × 20</option><option value="50">50 × 50</option><option value="100">100 × 100</option></select></label>
+    <label>Ваш цвет<select id="human"><option value="red">Красные — первый ход</option><option value="blue">Синие — второй ход</option></select></label>
+    <button class="primary" type="submit">Новая партия</button>
+  </form>
+  <section class="stats" aria-label="Состояние партии">
+    <div class="stat panel"><small>Захвачено красными</small><strong class="red" id="redScore">0</strong></div>
+    <div class="stat panel"><small>Захвачено синими</small><strong class="blue" id="blueScore">0</strong></div>
+    <div class="stat panel"><small>Следующий ход / поставлено</small><strong id="moveNo">1 / 0</strong></div>
+    <div class="stat panel"><small>Общее время ответов</small><strong id="clock">15:00</strong></div>
+  </section>
+  <div class="layout">
+    <section class="panel" aria-label="Игровое поле">
+      <div class="toolbar">
+        <span id="status" role="status" aria-live="polite">Начните новую партию</span>
+        <label>Масштаб <input id="zoom" type="range" min="12" max="40" value="24"><output id="zoomValue">24 px</output></label>
+        <button id="retry" type="button" hidden>Продолжить: ход бота</button>
+      </div>
+      <div id="viewport"><canvas id="board" aria-label="Поле игры в точки. Поставьте точку щелчком по пересечению сетки."></canvas></div>
+      <div class="legend"><span class="red">● Красные</span><span class="blue">● Синие</span><span>⊗ Мёртвые</span><span>◎ Последний ход: <b id="last">—</b></span></div>
+    </section>
+    <aside class="panel"><h2>Журнал партии</h2><ul id="log" aria-label="События партии"></ul><p class="note">Подробности HTTP-запросов — в консоли браузера (F12 → Console).</p></aside>
+  </div>
+  <details class="panel">
+    <summary>Как играть и как считаются захваты</summary>
+    <p>Запустите сервер командой <code>npm start</code>, укажите его адрес и нажмите «Новая партия». Кликайте по свободным пересечениям в свой ход. Масштаб меняется ползунком, большое поле прокручивается. Время человека на обдумывание не расходует таймер.</p>
+    <p>Живые точки цвета служат стенами; остальные клетки связаны по четырём направлениям. Область, не касающаяся края, окружена. Вражеские точки внутри становятся мёртвыми и занимают клетки. Пустая область очков не даёт. После хода состояние пересчитывается до стабилизации с возможным оживлением точек.</p>
+    <p>Это локальная реализация по описанию спецификации, ещё не сверенная с движком арены. Для неоднозначных циклов пересчёта игра останавливается с диагностикой. Нельзя утверждать совпадение счёта с ареной без такой сверки.</p>
+    <p>Ошибка запроса, ответ вне поля или таймаут 5 секунд — пропуск бота. После 11 пропусков подряд бот проигрывает технически. Для повторной попытки нажмите «Продолжить: ход бота» после своего хода. При заполнении поля или исчерпании общего времени победитель определяется по счёту.</p>
+  </details>
+</main>
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  const canvas = $('board');
+  const ctx = canvas.getContext('2d');
+  const colors = { red: '#ff6578', blue: '#69bcff' };
+  const names = { red: 'Красные', blue: 'Синие' };
+  const opposite = (color) => color === 'red' ? 'blue' : 'red';
+  const TIMEOUT = 5000;
+  const GAME_TIME = 900000;
+  let state = null;
+  let pending = null;
+  let cell = Number($('zoom').value);
+  let lastClockPaint = 0;
+
+  function log(message, kind = 'info', detail) {
+    const entry = document.createElement('li');
+    entry.className = kind;
+    const time = document.createElement('time');
+    time.textContent = new Date().toLocaleTimeString('ru-RU');
+    entry.append(time, document.createTextNode(message));
+    $('log').prepend(entry);
+    while ($('log').children.length > 100) $('log').lastChild.remove();
+    console.groupCollapsed(`%c ТОЧКИ %c ${message}`, `background:${kind === 'error' ? '#a92a40' : '#3758bf'};color:white;padding:3px 7px;border-radius:4px;font-weight:bold`, 'color:#8da9d9');
+    if (detail !== undefined) console.log(detail);
+    console.groupEnd();
+  }
+
+  // Окружённые клетки: всё, что не достижимо с края без прохода через стену.
+  function enclosed(board, n, wall) {
+    const outside = new Uint8Array(board.length);
+    const queue = new Int32Array(board.length);
+    let head = 0;
+    let tail = 0;
+    const visit = (i) => {
+      if (!outside[i] && board[i] !== wall) { outside[i] = 1; queue[tail++] = i; }
+    };
+    for (let i = 0; i < n; i++) {
+      visit(i); visit((n - 1) * n + i); visit(i * n); visit(i * n + n - 1);
+    }
+    while (head < tail) {
+      const i = queue[head++];
+      if (i % n > 0) visit(i - 1);
+      if (i % n < n - 1) visit(i + 1);
+      if (i >= n) visit(i - n);
+      if (i < board.length - n) visit(i + n);
+    }
+    return outside.map((value, i) => Number(!value && board[i] !== wall));
+  }
+
+  function resolveCaptures(owners, n, mover, previousLive, placedIndex) {
+    // Начинаем со всех точек для проверки оживления, но новая точка
+    // внутри уже существовавшего чужого контура сразу мертва.
+    // Затем проверяем ходивший цвет и противоположный по очереди.
+    const live = owners.slice();
+    if (previousLive && enclosed(previousLive, n, 3 - mover)[placedIndex]) live[placedIndex] = 0;
+    const history = new Set();
+    for (let round = 0; round < 128; round++) {
+      const before = live.join('');
+      if (history.has(before)) throw new Error('Цикл пересчёта окружений. Требуется сверка с движком арены.');
+      history.add(before);
+      for (const wall of [mover, 3 - mover]) {
+        const mask = enclosed(live, n, wall);
+        for (let i = 0; i < owners.length; i++) {
+          if (owners[i] === 3 - wall) live[i] = mask[i] ? 0 : owners[i];
+        }
+      }
+      if (live.join('') === before) return live;
+    }
+    throw new Error('Превышен предел пересчёта окружений. Требуется сверка с движком арены.');
+  }
+
+  function score(game) {
+    const result = { red: 0, blue: 0 };
+    for (let i = 0; i < game.owners.length; i++) {
+      if (game.owners[i] && !game.live[i]) result[game.owners[i] === 1 ? 'blue' : 'red']++;
+    }
+    return result;
+  }
+
+  function render() {
+    if (!state) return;
+    const game = state;
+    const n = game.n;
+    const side = (n + 1) * cell;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(side * dpr);
+    canvas.height = Math.round(side * dpr);
+    canvas.style.width = `${side}px`;
+    canvas.style.height = `${side}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.strokeStyle = '#293c57'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const p = (i + 1) * cell;
+      ctx.moveTo(cell, p); ctx.lineTo(n * cell, p);
+      ctx.moveTo(p, cell); ctx.lineTo(p, n * cell);
+    }
+    ctx.stroke();
+    const radius = Math.max(2.5, cell * .19);
+    for (let i = 0; i < game.owners.length; i++) {
+      if (!game.owners[i]) continue;
+      const x = (i % n + 1) * cell;
+      const y = (Math.floor(i / n) + 1) * cell;
+      ctx.strokeStyle = ctx.fillStyle = colors[game.owners[i] === 1 ? 'red' : 'blue'];
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2);
+      if (game.live[i]) ctx.fill();
+      else {
+        ctx.stroke();
+        const r = radius * .65;
+        ctx.beginPath(); ctx.moveTo(x-r,y-r); ctx.lineTo(x+r,y+r); ctx.moveTo(x-r,y+r); ctx.lineTo(x+r,y-r); ctx.stroke();
+      }
+      if (game.last && game.last[0] === i % n && game.last[1] === Math.floor(i / n)) {
+        ctx.strokeStyle = '#ffe291'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(x,y,radius+4,0,Math.PI*2); ctx.stroke();
+      }
+    }
+    const points = score(game);
+    $('redScore').textContent = points.red;
+    $('blueScore').textContent = points.blue;
+    $('moveNo').textContent = `${game.moveNo} / ${game.placed}`;
+    $('last').textContent = game.last ? `(${game.last.join(', ')})` : '—';
+    $('status').textContent = game.ended ? game.result
+      : game.busy ? 'Бот думает…' : `Ход: ${names[game.turn]}${game.turn === game.human ? ' — ваш' : ' — бот'}`;
+    $('retry').hidden = game.ended || game.busy || game.turn === game.human;
+    canvas.style.cursor = game.ended || game.busy || game.turn !== game.human ? 'default' : 'crosshair';
+    paintClock();
+  }
+
+  function remaining() {
+    return Math.max(0, state.timeLeftMs - (state.busy ? performance.now() - state.started : 0));
+  }
+  function paintClock() {
+    if (!state) return;
+    const seconds = Math.ceil(remaining() / 1000);
+    $('clock').textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2,'0')}`;
+  }
+  function finish(reason, winner) {
+    state.ended = true;
+    const points = score(state);
+    const victor = winner ?? (points.red > points.blue ? 'red' : points.blue > points.red ? 'blue' : null);
+    state.result = `${reason} · ${victor ? `победили ${names[victor].toLowerCase()}` : 'ничья'} · ${points.red}:${points.blue}`;
+    log(state.result);
+    render();
+  }
+
+  function place(x, y) {
+    const game = state;
+    const index = y * game.n + x;
+    const owners = game.owners.slice();
+    owners[index] = game.turn === 'red' ? 1 : 2;
+    let live;
+    try { live = resolveCaptures(owners, game.n, owners[index], game.live, index); }
+    catch (error) {
+      game.ended = true;
+      game.result = 'Партия остановлена: неоднозначный пересчёт правил';
+      log(error.message, 'error'); render(); return;
+    }
+    game.owners = owners; game.live = live; game.last = [x, y]; game.placed++;
+    log(`Ход ${game.moveNo}: ${names[game.turn]} → (${x}, ${y})`, 'info', { score: score(game) });
+    game.moveNo++;
+    game.turn = opposite(game.turn);
+    if (game.placed === game.owners.length) finish('Поле заполнено');
+    else render();
+  }
+
+  function requestBody(game) {
+    const points = { red: [], blue: [] };
+    const dead = { red: [], blue: [] };
+    for (let i = 0; i < game.owners.length; i++) {
+      if (!game.owners[i]) continue;
+      const color = game.owners[i] === 1 ? 'red' : 'blue';
+      const point = [i % game.n, Math.floor(i / game.n)];
+      points[color].push(point);
+      if (!game.live[i]) dead[color].push(point);
+    }
+    return { gameId: game.id, moveNo: game.moveNo, you: game.turn,
+      field: { width: game.n, height: game.n }, points, dead, score: score(game), last: game.last,
+      moveTimeoutMs: TIMEOUT, timeLeftMs: Math.floor(game.timeLeftMs) };
+  }
+
+  async function botMove() {
+    const game = state;
+    if (!game || game.ended || game.busy || game.turn === game.human) return;
+    if (game.timeLeftMs <= 0) return finish('Время партии истекло');
+    game.busy = true; game.started = performance.now();
+    const controller = new AbortController();
+    pending = controller;
+    const timer = setTimeout(() => controller.abort(), Math.min(TIMEOUT, game.timeLeftMs));
+    const body = requestBody(game);
+    render();
+    log(`Запрос хода ${game.moveNo} → ${game.address}/v1/move`, 'info', body);
+    let move;
+    let failure;
+    try {
+      const response = await fetch(`${game.address}/v1/move`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body), signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      move = await response.json();
+      if (!move || !Number.isSafeInteger(move.x) || !Number.isSafeInteger(move.y)
+        || move.x < 0 || move.y < 0 || move.x >= game.n || move.y >= game.n
+        || game.owners[move.y * game.n + move.x]) throw new Error('Бот вернул недопустимый ход');
+      if (performance.now() - game.started >= TIMEOUT) throw new Error('Ответ получен после таймаута');
+    } catch (error) {
+      failure = error.name === 'AbortError' ? 'Истёк таймаут запроса' : error.message;
+    } finally {
+      clearTimeout(timer);
+    }
+    if (state !== game) return; // Поздний ответ не попадает в новую партию.
+    pending = null;
+    const elapsed = performance.now() - game.started;
+    game.timeLeftMs = Math.max(0, game.timeLeftMs - elapsed);
+    game.busy = false;
+    if (game.timeLeftMs <= 0) return finish('Время партии истекло');
+    if (failure) {
+      game.misses++;
+      log(`Пропуск бота ${game.misses}/11: ${failure}`, 'error');
+      if (game.misses > 10) return finish('Техническое поражение бота', game.human);
+      game.moveNo++;
+      game.turn = game.human;
+      render();
+    } else {
+      game.misses = 0;
+      log(`Ответ за ${Math.round(elapsed)} мс`, 'info', move);
+      place(move.x, move.y);
+    }
+  }
+
+  $('settings').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const url = new URL($('address').value);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+      log('Укажите HTTP(S)-адрес без пароля, параметров и фрагмента', 'error'); return;
+    }
+    pending?.abort();
+    const n = Number($('size').value);
+    state = { id: `web-${Date.now()}-${Math.random().toString(36).slice(2,8)}`, n,
+      owners: new Uint8Array(n*n), live: new Uint8Array(n*n),
+      human: $('human').value, address: url.href.replace(/\/+$/, ''), turn: 'red', moveNo: 1,
+      placed: 0, last: null, misses: 0, timeLeftMs: GAME_TIME, busy: false, ended: false };
+    $('log').replaceChildren();
+    log(`Новая партия ${n}×${n}. Ваш цвет: ${names[state.human].toLowerCase()}`);
+    render();
+    $('viewport').scrollTo(0, 0);
+    if (state.turn !== state.human) void botMove();
+  });
+  canvas.addEventListener('click', (event) => {
+    if (!state || state.ended || state.busy || state.turn !== state.human) return;
+    const rect = canvas.getBoundingClientRect();
+    const px = event.clientX - rect.left;
+    const py = event.clientY - rect.top;
+    const x = Math.round(px / cell) - 1;
+    const y = Math.round(py / cell) - 1;
+    if (x < 0 || y < 0 || x >= state.n || y >= state.n || state.owners[y*state.n+x]
+      || Math.hypot(px-(x+1)*cell, py-(y+1)*cell) > cell * .48) return;
+    const start = performance.now();
+    place(x,y);
+    state.timeLeftMs = Math.max(0, state.timeLeftMs - (performance.now() - start));
+    if (!state.ended && state.timeLeftMs <= 0) finish('Время партии истекло');
+    else if (!state.ended && state.turn !== state.human && state.misses === 0) void botMove();
+    else render();
+  });
+  $('retry').addEventListener('click', () => void botMove());
+  $('zoom').addEventListener('input', () => {
+    cell = Number($('zoom').value);
+    $('zoomValue').textContent = `${cell} px`;
+    render();
+  });
+  window.addEventListener('resize', () => render());
+  function tick(now) {
+    if (state?.busy && now - lastClockPaint > 200) { paintClock(); lastClockPaint = now; }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+  $('settings').requestSubmit();
+</script>
+</body>
+</html>
