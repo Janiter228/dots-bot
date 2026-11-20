@@ -7,12 +7,16 @@ let baseUrl;
 
 before(async () => {
   server = createBotServer({ botToken: '' });
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
   const address = server.address();
   baseUrl = `http://127.0.0.1:${address.port}`;
 });
 
 after(async () => {
+  if (!server?.listening) return;
   server.closeAllConnections();
   await new Promise((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());
@@ -92,4 +96,49 @@ test('POST /v1/move отклоняет некорректный запрос', a
   assert.equal(response.status, 400);
   const data = await response.json();
   assert.equal(data.error.code, 'bad_request');
+});
+
+const emptyPosition = {
+  gameId: 'contract', moveNo: 1, you: 'red', field: { width: 3, height: 3 },
+  points: { red: [], blue: [] }, dead: { red: [], blue: [] }, last: null,
+  moveTimeoutMs: 50, timeLeftMs: 900000,
+};
+
+test('CORS preflight разрешает браузерную песочницу', async () => {
+  const response = await fetch(`${baseUrl}/v1/move`, { method: 'OPTIONS',
+    headers: { Origin: 'https://arena.projectset.ru', 'Access-Control-Request-Method': 'POST' } });
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get('access-control-allow-origin'), '*');
+  assert.equal(response.headers.get('access-control-allow-private-network'), 'true');
+});
+
+test('ошибочные запросы не мешают следующему допустимому ходу', async () => {
+  const cases = [
+    ['application/json', '{', 400],
+    ['application/json', '', 400],
+    ['text/plain', '{}', 415],
+    ['application/json', JSON.stringify({ ...emptyPosition, you: 'green' }), 400],
+    ['application/json', JSON.stringify({ ...emptyPosition, points: { red: [[3, 0]], blue: [] } }), 400],
+  ];
+  for (const [type, body, status] of cases) {
+    const response = await fetch(`${baseUrl}/v1/move`, {
+      method: 'POST', headers: { 'Content-Type': type }, body,
+    });
+    assert.equal(response.status, status);
+    assert.ok((await response.json()).error.code);
+  }
+  const response = await fetch(`${baseUrl}/v1/move`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(emptyPosition),
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { x: 1, y: 1 });
+});
+
+test('полное поле возвращает 409', async () => {
+  const response = await fetch(`${baseUrl}/v1/move`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...emptyPosition, field: { width: 1, height: 1 }, points: { red: [[0, 0]], blue: [] } }),
+  });
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error.code, 'no_free_moves');
 });
