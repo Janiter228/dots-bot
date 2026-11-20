@@ -1,5 +1,5 @@
 /**
- * Dots Bot v0.3.1 — поиск с избеганием закрытых территорий.
+ * Dots Bot v0.3.2 — поиск с общим таймером и тактическим углублением.
  *
  * Что делает алгоритм:
  *  - использует правила связности из спецификации: точки соединяются по 8
@@ -9,7 +9,7 @@
  *  - выбирает кандидатов не только рядом с последним ходом, а по всему фронтиру;
  *  - оценивает ходы по захватам, связности групп, изоляции и контролю фронтира;
  *  - для каждого нашего хода ищет сильнейшие ответы соперника и оценивает
- *    худший из них (ограниченный minimax глубины 2 полухода);
+ *    худший из них (2 полухода, выборочно до 4 в тактике);
  *  - ограничивает время поиска, оставляя запас до лимита API.
  *
  * Ограничение: в архиве нет эталонного движка арены. Поэтому гипотетическая
@@ -35,18 +35,42 @@ const NEIGHBORS_8 = [
 ];
 
 const CONFIG = {
-  maxThinkMs: 1850,
+  maxThinkMs: 475,
   thinkFraction: 0.52,
+  gameClockDivisor: 120,
   rootMoves: 28,
   replyMoves: 10,
+  tacticalRoots: 6,
   oversample: 2,
   earlyRadius: 2,
   lateRadius: 1,
   earlyGameStones: 450,
-  captureWeight: 6_500,
+};
+
+const WEIGHTS = {
+  orderingCapture: 6_500,
   selfCapturePenalty: 12_000,
-  connectivityWeight: 13,
-  frontierWeight: 0.22,
+  captured: 5_000,
+  lost: 5_400,
+  live: 1.8,
+  connectivity: 13,
+  frontier: 0.22,
+  singleton: 0.8,
+  groupSize: 0.12,
+  rootCapture: 120,
+  rootSelfCapture: 300,
+  ownAdjacent: 8,
+  enemyAdjacent: 7,
+  ownNear: 1.5,
+  enemyNear: 2.1,
+  contact: 10,
+  support: 4,
+  crowding: 9,
+  isolation: 8,
+  bridge: 18,
+  pressure: 5,
+  edge: 3,
+  center: 7,
 };
 
 function coordIndex(x, y, width) {
@@ -54,14 +78,6 @@ function coordIndex(x, y, width) {
 }
 
 function countLive(board, code) {
-  let count = 0;
-  for (let i = 0; i < board.length; i += 1) {
-    if (board[i] === code) count += 1;
-  }
-  return count;
-}
-
-function countCode(board, code) {
   let count = 0;
   for (let i = 0; i < board.length; i += 1) {
     if (board[i] === code) count += 1;
@@ -225,22 +241,22 @@ function positionalScore(
   const ownGroupCount = countAdjacentGroups(ownGroups.ids, x, y, width, height);
   const enemyGroupCount = countAdjacentGroups(enemyGroups.ids, x, y, width, height);
 
-  let score = ownAdjacent * 8 + enemyAdjacent * 7;
-  score += Math.min(ownNear, 8) * 1.5;
-  score += Math.min(enemyNear, 8) * 2.1;
-  if (ownAdjacent && enemyAdjacent) score += 10;
-  if (ownAdjacent >= 2) score += 4;
-  if (ownAdjacent >= 5) score -= 9;
-  if (ownAdjacent === 0 && enemyAdjacent === 0) score -= 8;
+  let score = ownAdjacent * WEIGHTS.ownAdjacent + enemyAdjacent * WEIGHTS.enemyAdjacent;
+  score += Math.min(ownNear, 8) * WEIGHTS.ownNear;
+  score += Math.min(enemyNear, 8) * WEIGHTS.enemyNear;
+  if (ownAdjacent && enemyAdjacent) score += WEIGHTS.contact;
+  if (ownAdjacent >= 2) score += WEIGHTS.support;
+  if (ownAdjacent >= 5) score -= WEIGHTS.crowding;
+  if (ownAdjacent === 0 && enemyAdjacent === 0) score -= WEIGHTS.isolation;
 
   // Соединение разрозненных групп обычно полезнее, чем добавление точки
   // в уже плотную группу. Аналогично, контакт с несколькими вражескими
   // группами создаёт возможности для разделения и давления.
-  score += Math.max(0, ownGroupCount - 1) * 18;
-  score += Math.max(0, enemyGroupCount - 1) * 5;
+  score += Math.max(0, ownGroupCount - 1) * WEIGHTS.bridge;
+  score += Math.max(0, enemyGroupCount - 1) * WEIGHTS.pressure;
 
   if (x === 0 || y === 0 || x === width - 1 || y === height - 1) {
-    if (ownAdjacent || enemyAdjacent) score += 3;
+    if (ownAdjacent || enemyAdjacent) score += WEIGHTS.edge;
   }
 
   if (liveTotal < 30) {
@@ -248,13 +264,13 @@ function positionalScore(
     const cy = (height - 1) / 2;
     const maxDistance = Math.max(1, cx + cy);
     const distance = Math.abs(x - cx) + Math.abs(y - cy);
-    score += 7 * (1 - distance / maxDistance);
+    score += WEIGHTS.center * (1 - distance / maxDistance);
   }
 
   return score;
 }
 
-function generateCandidateIndices(board, width, height, ownCode, enemyCode, limit, forbiddenMask) {
+function generateCandidateIndices(board, width, height, ownCode, enemyCode, limit, forbiddenMask, enemyTerritory) {
   const size = board.length;
   const marked = new Uint8Array(size);
   const candidates = [];
@@ -303,11 +319,17 @@ function generateCandidateIndices(board, width, height, ownCode, enemyCode, limi
   }
 
   // Если рядом с фронтиром нет безопасных клеток, ищем любую свободную
-  // клетку вне закрытых территорий. Только если все свободные клетки уже
-  // находятся в таких зонах, разрешаем вынужденный ход внутри зоны.
+  // клетку вне закрытых территорий, затем внутри своей. В чужую идём
+  // только если все свободные клетки там.
   if (candidates.length === 0) {
     for (let index = 0; index < size; index += 1) {
       if (board[index] === EMPTY && !forbiddenMask[index]) candidates.push(index);
+    }
+  }
+
+  if (candidates.length === 0) {
+    for (let index = 0; index < size; index += 1) {
+      if (board[index] === EMPTY && !enemyTerritory[index]) candidates.push(index);
     }
   }
 
@@ -355,17 +377,71 @@ function applyMove(board, index, width, height, playerCode, enemyCode, enemyTerr
   return { board: nextBoard, captured: result.captured.length, selfCaptured: false };
 }
 
-function rankMoves(board, width, height, playerCode, enemyCode, limit, deadline) {
+// Точка сочленения в графе клеток, проходимых из-за края поля: если
+// поставить в неё стену, поддерево без обходного пути окажется в окружении.
+function captureMoves(board, width, height, wall, target, forbidden) {
+  const size = board.length;
+  const seen = new Int32Array(size);
+  const low = new Int32Array(size);
+  const targets = new Int32Array(size);
+  const captures = new Int32Array(size);
+  const stack = new Int32Array(size);
+  const direction = new Uint8Array(size);
+  const isBorder = (i) => i < width || i >= size - width
+    || i % width === 0 || i % width === width - 1;
+  let clock = 1;
+
+  function enter(i) {
+    seen[i] = ++clock;
+    low[i] = isBorder(i) ? 1 : clock;
+    targets[i] = Number(board[i] === target);
+  }
+
+  for (let start = 0; start < size; start += 1) {
+    if (seen[start] || board[start] === wall || !isBorder(start)) continue;
+    enter(start);
+    let depth = 0;
+    stack[0] = start;
+    while (depth >= 0) {
+      const i = stack[depth];
+      const dir = direction[i]++;
+      if (dir === 4) {
+        depth -= 1;
+        if (depth >= 0) {
+          const parent = stack[depth];
+          if (low[i] >= seen[parent]) captures[parent] += targets[i];
+          low[parent] = Math.min(low[parent], low[i]);
+          targets[parent] += targets[i];
+        }
+        continue;
+      }
+      if ((dir === 0 && i % width === 0) || (dir === 1 && i % width === width - 1)) continue;
+      const next = dir === 0 ? i - 1 : dir === 1 ? i + 1 : dir === 2 ? i - width : i + width;
+      if (next < 0 || next >= size || board[next] === wall) continue;
+      if (seen[next]) {
+        if (depth === 0 || next !== stack[depth - 1]) low[i] = Math.min(low[i], seen[next]);
+      } else {
+        enter(next);
+        stack[++depth] = next;
+      }
+    }
+  }
+
+  const moves = [];
+  for (let index = 0; index < size; index += 1) {
+    if (captures[index] && board[index] === EMPTY && !forbidden[index]) {
+      moves.push({ index, count: captures[index] });
+    }
+  }
+  return moves.sort((a, b) => b.count - a.count || a.index - b.index);
+}
+
+function rankMoves(board, width, height, playerCode, enemyCode, limit, deadline,
+  ownTerritory, enemyTerritory, forced) {
   // Любая клетка внутри закрытой области нежелательна:
   // - в чужой территории наша точка сразу погибнет и даст сопернику очко;
   // - в своей территории ход не приносит очков и расходует очередь, хотя
   //   такая клетка могла бы остаться ловушкой для точки соперника.
-  const ownTerritory = analyzeEnclosures(
-    board, width, height, playerCode, enemyCode,
-  ).enclosedMask;
-  const enemyTerritory = analyzeEnclosures(
-    board, width, height, enemyCode, playerCode,
-  ).enclosedMask;
   const forbiddenMask = new Uint8Array(board.length);
   for (let i = 0; i < board.length; i += 1) {
     if (ownTerritory[i] || enemyTerritory[i]) forbiddenMask[i] = 1;
@@ -373,15 +449,15 @@ function rankMoves(board, width, height, playerCode, enemyCode, limit, deadline)
 
   const rawCandidates = generateCandidateIndices(
     board, width, height, playerCode, enemyCode,
-    Math.max(limit * CONFIG.oversample, limit), forbiddenMask,
+    Math.max(limit * CONFIG.oversample, limit), forbiddenMask, enemyTerritory,
   );
   const groupsOwn = buildGroups(board, width, height, playerCode);
   const groupsEnemy = buildGroups(board, width, height, enemyCode);
   const liveTotal = countLive(board, playerCode) + countLive(board, enemyCode);
   const ranked = [];
 
-  for (const index of rawCandidates) {
-    if (Date.now() >= deadline) break;
+  for (const index of new Set([...forced, ...rawCandidates])) {
+    if (performance.now() >= deadline) return null;
     const simulation = applyMove(
       board, index, width, height, playerCode, enemyCode, enemyTerritory,
     );
@@ -391,9 +467,9 @@ function rankMoves(board, width, height, playerCode, enemyCode, limit, deadline)
       board, index, width, height, playerCode, enemyCode,
       groupsOwn, groupsEnemy, liveTotal,
     );
-    const score = simulation.captured * CONFIG.captureWeight
+    const score = simulation.captured * WEIGHTS.orderingCapture
       + position
-      - (simulation.selfCaptured ? CONFIG.selfCapturePenalty : 0);
+      - (simulation.selfCaptured ? WEIGHTS.selfCapturePenalty : 0);
 
     ranked.push({
       index,
@@ -405,7 +481,10 @@ function rankMoves(board, width, height, playerCode, enemyCode, limit, deadline)
   }
 
   ranked.sort((a, b) => b.orderScore - a.orderScore || a.index - b.index);
-  return ranked.slice(0, limit);
+  const shortlist = ranked.slice(0, limit);
+  const required = new Set(forced);
+  return ranked.filter(({ index }) => required.has(index))
+    .concat(shortlist.filter(({ index }) => !required.has(index)));
 }
 
 /**
@@ -413,10 +492,9 @@ function rankMoves(board, width, height, playerCode, enemyCode, limit, deadline)
  * Это не официальный счёт: он нужен только для сравнения веток поиска.
  */
 function evaluatePosition(board, width, height) {
-  const ownDead = countCode(board, OUR_DEAD);
-  const enemyDead = countCode(board, ENEMY_DEAD);
-  const ownLive = countCode(board, OUR_LIVE);
-  const enemyLive = countCode(board, ENEMY_LIVE);
+  const counts = [0, 0, 0, 0, 0];
+  for (let i = 0; i < board.length; i += 1) counts[board[i]] += 1;
+  const [, ownLive, enemyLive, ownDead, enemyDead] = counts;
 
   const ownGroups = buildGroups(board, width, height, OUR_LIVE);
   const enemyGroups = buildGroups(board, width, height, ENEMY_LIVE);
@@ -425,8 +503,8 @@ function evaluatePosition(board, width, height) {
     let value = 0;
     for (let id = 1; id < groupSizes.length; id += 1) {
       const size = groupSizes[id];
-      if (size === 1) value -= 0.8;
-      else value += Math.sqrt(size) + Math.min(size, 8) * 0.12;
+      if (size === 1) value -= WEIGHTS.singleton;
+      else value += Math.sqrt(size) + Math.min(size, 8) * WEIGHTS.groupSize;
     }
     return value;
   }
@@ -452,65 +530,155 @@ function evaluatePosition(board, width, height) {
     if (nearEnemy) enemyFrontier += 1;
   }
 
-  return (enemyDead * 5_000) - (ownDead * 5_400)
-    + (ownLive - enemyLive) * 1.8
+  return enemyDead * WEIGHTS.captured - ownDead * WEIGHTS.lost
+    + (ownLive - enemyLive) * WEIGHTS.live
     + (groupValue(ownGroups.sizes) - groupValue(enemyGroups.sizes))
-      * CONFIG.connectivityWeight
-    + (ownFrontier - enemyFrontier) * CONFIG.frontierWeight;
+      * WEIGHTS.connectivity
+    + (ownFrontier - enemyFrontier) * WEIGHTS.frontier;
 }
 
-function findAnyFreeMove(board, width, height) {
+function findFreeIndex(board, width, height, ownTerritory, enemyTerritory) {
   const cx = Math.floor(width / 2);
   const cy = Math.floor(height / 2);
   let best = -1;
-  let bestDistance = Infinity;
+  let bestPriority = Infinity;
   for (let index = 0; index < board.length; index += 1) {
     if (board[index] !== EMPTY) continue;
     const x = index % width;
     const y = Math.floor(index / width);
-    const distance = Math.abs(x - cx) + Math.abs(y - cy);
-    if (distance < bestDistance) {
+    const zone = enemyTerritory?.[index] ? 2 : ownTerritory?.[index] ? 1 : 0;
+    const priority = zone * (width + height) + Math.abs(x - cx) + Math.abs(y - cy);
+    if (priority < bestPriority) {
       best = index;
-      bestDistance = distance;
+      bestPriority = priority;
     }
   }
-  return best < 0 ? null : { x: best % width, y: Math.floor(best / width) };
+  return best;
+}
+
+function threats(board, width, height) {
+  const ours = analyzeEnclosures(board, width, height, OUR_LIVE, ENEMY_LIVE).enclosedMask;
+  const enemy = analyzeEnclosures(board, width, height, ENEMY_LIVE, OUR_LIVE).enclosedMask;
+  return {
+    ours, enemy,
+    attacks: captureMoves(board, width, height, OUR_LIVE, ENEMY_LIVE, enemy),
+    dangers: captureMoves(board, width, height, ENEMY_LIVE, OUR_LIVE, ours),
+  };
+}
+
+// На третьем полуходе пробуем захваты и прямые блоки, на четвёртом —
+// сильнейший оставшийся захват соперника. Это выборочная, не полная глубина.
+function tacticalLeaf(board, width, height, deadline, staticScore) {
+  if (performance.now() >= deadline) return null;
+  const { enemy, attacks, dangers } = threats(board, width, height);
+  if (attacks.length === 0 && dangers.length === 0) return staticScore;
+
+  const indices = new Set([...attacks, ...dangers].map(({ index }) => index));
+  const fallback = findFreeIndex(board, width, height, undefined, enemy);
+  if (fallback >= 0) indices.add(fallback);
+  let best = -Infinity;
+  for (const index of indices) {
+    if (performance.now() >= deadline) return null;
+    const next = applyMove(board, index, width, height, OUR_LIVE, ENEMY_LIVE, enemy).board;
+    const ownTerritory = analyzeEnclosures(next, width, height, OUR_LIVE, ENEMY_LIVE).enclosedMask;
+    const counter = captureMoves(next, width, height, ENEMY_LIVE, OUR_LIVE, ownTerritory)[0];
+    const leaf = counter
+      ? applyMove(next, counter.index, width, height, ENEMY_LIVE, OUR_LIVE, ownTerritory).board
+      : next;
+    best = Math.max(best, evaluatePosition(leaf, width, height));
+  }
+  return performance.now() >= deadline ? null : best;
+}
+
+function chooseInfiniteMove(request, deadline) {
+  const occupied = new Map();
+  const key = (x, y) => `${x},${y}`;
+  for (const color of ['red', 'blue']) {
+    for (const [x, y] of request.points[color]) occupied.set(key(x, y), color);
+    for (const [x, y] of request.dead?.[color] ?? []) occupied.set(key(x, y), null);
+  }
+  if (occupied.size === 0) return { x: 0, y: 0 };
+  const seen = new Set();
+  let best = null;
+  let bestScore = -Infinity;
+  for (const point of occupied.keys()) {
+    const [x, y] = point.split(',').map(Number);
+    for (const [dx, dy] of NEIGHBORS_8) {
+      const nx = x + dx;
+      const ny = y + dy;
+      const candidate = key(nx, ny);
+      if (!Number.isSafeInteger(nx) || !Number.isSafeInteger(ny)
+          || occupied.has(candidate) || seen.has(candidate)) continue;
+      if (best && performance.now() >= deadline) return best;
+      seen.add(candidate);
+      let score = 0;
+      for (const [ax, ay] of NEIGHBORS_8) {
+        const color = occupied.get(key(nx + ax, ny + ay));
+        if (color) score += color === request.you ? WEIGHTS.ownAdjacent : WEIGHTS.enemyAdjacent;
+      }
+      if (score > bestScore) {
+        best = { x: nx, y: ny };
+        bestScore = score;
+      }
+    }
+  }
+  return best;
 }
 
 export function chooseMove(request) {
-  const { board, width, height } = buildBoard(request);
-  const liveTotal = countLive(board, OUR_LIVE) + countLive(board, ENEMY_LIVE);
-  if (liveTotal === 0) {
-    return { x: Math.floor(width / 2), y: Math.floor(height / 2) };
-  }
-
+  const started = performance.now();
   const requestedTimeout = Number.isFinite(request.moveTimeoutMs)
     ? request.moveTimeoutMs
     : 5_000;
-  const thinkBudget = Math.max(10, Math.min(
+  const clockBudget = Number.isFinite(request.timeLeftMs)
+    ? request.timeLeftMs / CONFIG.gameClockDivisor
+    : Infinity;
+  const thinkBudget = Math.max(0, Math.min(
     CONFIG.maxThinkMs,
-    Math.floor(requestedTimeout * CONFIG.thinkFraction),
+    requestedTimeout * CONFIG.thinkFraction,
+    clockBudget,
   ));
-  const deadline = Date.now() + thinkBudget;
+  const deadline = started + thinkBudget;
+  if (request.field.infinite) return chooseInfiniteMove(request, deadline);
 
+  const { board, width, height } = buildBoard(request);
+  const moveAt = (index) => index < 0 ? null : { x: index % width, y: Math.floor(index / width) };
+  const legal = findFreeIndex(board, width, height);
+  if (legal < 0 || thinkBudget === 0 || request.points.red.length + request.points.blue.length === 0) {
+    return moveAt(legal);
+  }
+
+  const { ours, enemy, attacks, dangers } = threats(board, width, height);
+  const safe = findFreeIndex(board, width, height, ours, enemy);
+  const blocks = dangers.filter(({ index }) => !enemy[index]);
+  if (dangers.length === 0 && attacks.length === 1) return moveAt(attacks[0].index);
+  if (dangers.length === 1 && blocks.length === 1 && attacks.length === 0) return moveAt(blocks[0].index);
+  let bestIndex = attacks[0]?.index ?? blocks[0]?.index ?? safe;
+  if (performance.now() >= deadline || !board.some((value, index) => value === EMPTY && index !== legal)) {
+    return moveAt(bestIndex);
+  }
+
+  const forced = [...attacks, ...blocks].map(({ index }) => index);
+  const ordinaryDeadline = started + thinkBudget * 0.8;
   const rootMoves = rankMoves(
     board, width, height, OUR_LIVE, ENEMY_LIVE,
-    CONFIG.rootMoves, deadline,
+    CONFIG.rootMoves, ordinaryDeadline, ours, enemy, forced,
   );
-
-  if (rootMoves.length === 0) return findAnyFreeMove(board, width, height);
-
-  let bestIndex = rootMoves[0].index;
+  if (!rootMoves?.length) return moveAt(bestIndex);
+  if (forced.length === 0) bestIndex = rootMoves[0].index;
   let bestScore = -Infinity;
-  let completedRootMoves = 0;
+  const completed = [];
 
   for (const rootMove of rootMoves) {
-    if (Date.now() >= deadline) break;
+    if (performance.now() >= ordinaryDeadline) break;
+    const next = threats(rootMove.board, width, height);
+    const required = [...next.dangers, ...next.attacks.filter(({ index }) => !next.ours[index])];
 
     const replies = rankMoves(
       rootMove.board, width, height, ENEMY_LIVE, OUR_LIVE,
-      CONFIG.replyMoves, deadline,
+      CONFIG.replyMoves, ordinaryDeadline, next.enemy, next.ours, required.map(({ index }) => index),
     );
+    if (!replies) break;
 
     let worstReplyScore = Infinity;
     let fullyEvaluated = true;
@@ -519,24 +687,24 @@ export function chooseMove(request) {
       worstReplyScore = evaluatePosition(rootMove.board, width, height);
     } else {
       for (const reply of replies) {
-        if (Date.now() >= deadline) {
+        if (performance.now() >= ordinaryDeadline) {
           fullyEvaluated = false;
           break;
         }
         const score = evaluatePosition(reply.board, width, height);
+        reply.staticScore = score;
         if (score < worstReplyScore) worstReplyScore = score;
       }
     }
 
     // Неполную ветку не сравниваем с полностью просмотренными: это не даёт
     // случайно предпочесть ход, для которого мы успели проверить лишь один ответ.
-    if (!fullyEvaluated) break;
+    if (!fullyEvaluated || performance.now() >= ordinaryDeadline) break;
 
-    completedRootMoves += 1;
-    // Небольшая поправка за немедленный результат и за точку, погибающую сразу.
-    const finalScore = worstReplyScore
-      + rootMove.captured * 120
-      - (rootMove.selfCaptured ? 300 : 0);
+    const bonus = rootMove.captured * WEIGHTS.rootCapture
+      - (rootMove.selfCaptured ? WEIGHTS.rootSelfCapture : 0);
+    const finalScore = worstReplyScore + bonus;
+    completed.push({ rootMove, replies, bonus, finalScore });
 
     if (finalScore > bestScore) {
       bestScore = finalScore;
@@ -544,10 +712,24 @@ export function chooseMove(request) {
     }
   }
 
-  // Если таймер поиска сработал до завершения первой ветки, используем
-  // уже проверенный тактический рейтинг, а не рискуем пропустить ход.
-  if (completedRootMoves === 0) bestIndex = rootMoves[0].index;
-  return { x: bestIndex % width, y: Math.floor(bestIndex / width) };
+  const shortlist = completed.sort((a, b) => b.finalScore - a.finalScore).slice(0, CONFIG.tacticalRoots);
+  let deeperIndex = bestIndex;
+  let deeperScore = -Infinity;
+  let tactical = false;
+  for (const { rootMove, replies, bonus } of shortlist) {
+    let worst = replies.length ? Infinity : evaluatePosition(rootMove.board, width, height);
+    for (const reply of replies) {
+      const score = tacticalLeaf(reply.board, width, height, deadline, reply.staticScore);
+      if (score === null) return moveAt(bestIndex);
+      if (score !== reply.staticScore) tactical = true;
+      worst = Math.min(worst, score);
+    }
+    if (worst + bonus > deeperScore) {
+      deeperScore = worst + bonus;
+      deeperIndex = rootMove.index;
+    }
+  }
+  return moveAt(tactical ? deeperIndex : bestIndex);
 }
 
-export const BOT_VERSION = '0.3.1';
+export const BOT_VERSION = '0.3.2';
