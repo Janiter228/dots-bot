@@ -422,7 +422,7 @@
     const owners = game.owners.slice();
     owners[index] = game.turn === 'red' ? 1 : 2;
     let live;
-    try { live = resolveCaptures(owners, game.n, owners[index], game.live, index); }
+    try { live = resolveCaptures(owners, game.n, game.live, index); }
     catch (error) {
       game.ended = true;
       game.result = 'Партия остановлена: неоднозначный пересчёт правил';

@@ -2,7 +2,6 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BOT_VERSION } from '../bot/index.js';
 import { createBotServer } from '../server/index.js';
-import { BOT_VERSION } from '../bot/index.js';
 import { nestedPosition } from './support/nested-capture.mjs';
 
 let server;

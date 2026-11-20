@@ -15,7 +15,9 @@ function runWeb(check) {
   const noop = () => {};
   const getElementById = (id) => {
     if (!elements.has(id)) elements.set(id, {
-      value: '10', style: {}, children: [], append: noop, prepend: noop,
+      value: '10', style: {}, dataset: {}, children: [], append: noop, prepend: noop,
+      clientWidth: 320, clientHeight: 320, replaceChildren: noop, scrollTo: noop,
+      setAttribute: noop, querySelectorAll: () => [],
       getContext: () => new Proxy({}, { get: () => noop }),
       getBoundingClientRect: () => ({ left: 0, top: 0 }),
       requestSubmit: noop,
@@ -24,8 +26,10 @@ function runWeb(check) {
     return elements.get(id);
   };
   return runInNewContext(`${webScript}\n${check}`, {
-    document: { getElementById, createElement: () => getElementById('entry'), createTextNode: noop },
-    window: { addEventListener: noop }, requestAnimationFrame: noop,
+    document: { getElementById, createElement: () => ({ dataset: {}, append: noop }) },
+    requestAnimationFrame: noop,
+    matchMedia: () => ({ matches: true }),
+    ResizeObserver: class { observe() {} },
     console: { groupCollapsed: noop, groupEnd: noop, log: noop }, performance,
     nestedBoard, closingMove,
   });
@@ -74,11 +78,12 @@ test('ход с вложенным захватом оживляет центр�
 
 test('веб-игра показывает итог и блокирует ходы после заполнения поля', () => {
   const result = runWeb(`
-    state = { n: 2, owners: new Uint8Array([1, 2, 1, 0]), live: new Uint8Array([1, 2, 1, 0]),
-      human: 'blue', turn: 'blue', placed: 3, moveNo: 4, ended: false, timeLeftMs: 900000 };
-    canvas.click({ clientX: 20, clientY: 20 });
+    startGame({ n: 2, mode: 'local' });
+    for (const [x, y] of [[1, 1], [2, 1], [1, 2], [2, 2]]) {
+      canvas.click({ clientX: x * cell, clientY: y * cell });
+    }
     const status = $('status').textContent;
-    canvas.click({ clientX: 10, clientY: 10 });
+    canvas.click({ clientX: cell, clientY: cell });
     ({ status, ended: state.ended, moveNo: state.moveNo, retryHidden: $('retry').hidden });
   `);
   assert.equal(result.status, 'Поле заполнено · ничья · 0:0');
@@ -86,6 +91,7 @@ test('веб-игра показывает итог и блокирует ход
   assert.equal(result.moveNo, 5);
   assert.equal(result.retryHidden, true);
 });
+
 test('эталон арены: ромб захватывает центральную точку', {
   skip: !enabled && 'Нужен DOTS_ENGINE с эталонным dots.mjs',
 }, async () => {
