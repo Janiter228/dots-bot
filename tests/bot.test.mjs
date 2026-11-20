@@ -148,3 +148,58 @@ test('если все свободные клетки находятся в за
   const move = chooseMove(game({ width: 3, height: 3, you: 'red', red }));
   assert.deepEqual(move, { x: 1, y: 1 });
 });
+
+test('вынужденный ход внутри своей зоны предпочтительнее хода внутри чужой', () => {
+  const red = [[2, 1], [1, 2], [3, 2], [2, 3]];
+  const blue = [[6, 1], [5, 2], [7, 2], [6, 3]];
+  const fillers = [];
+  for (let y = 0; y < 5; y += 1) {
+    for (let x = 0; x < 9; x += 1) {
+      if (y === 2 && (x === 2 || x === 6)) continue;
+      if (![...red, ...blue].some(([px, py]) => px === x && py === y)) fillers.push([x, y]);
+    }
+  }
+  assert.deepEqual(chooseMove(game({ width: 9, height: 5, red: [...red, ...fillers], blue,
+    dead: { red: fillers, blue: [] } })), { x: 2, y: 2 });
+});
+
+test('если все свободные клетки внутри чужого контура, пасовать нельзя', () => {
+  const blue = [[1, 0], [0, 1], [2, 1], [1, 2]];
+  const red = [[0, 0], [2, 0], [0, 2], [2, 2]];
+  assert.deepEqual(chooseMove(game({ width: 3, height: 3, red, blue })), { x: 1, y: 1 });
+});
+
+test('бот создаёт вилку с двумя независимыми клетками замыкания', () => {
+  const red = [[3, 2], [3, 4], [5, 2], [5, 4]];
+  const blue = [[3, 3], [5, 3]];
+  const fork = chooseMove(game({ width: 11, height: 7, red, blue }));
+  assert.deepEqual(fork, { x: 4, y: 3 });
+  for (const [block, capture] of [[2, 6], [6, 2]]) {
+    assert.deepEqual(chooseMove(game({ width: 11, height: 7,
+      red: [...red, [fork.x, fork.y]], blue: [...blue, [block, 3]] })), { x: capture, y: 3 });
+  }
+});
+
+test('против потенциальной вилки бот создаёт угрозу контрзахвата', () => {
+  const red = [[3, 3], [5, 3]];
+  const blue = [[3, 2], [3, 4], [5, 2], [5, 4]];
+  const move = chooseMove(game({ width: 11, height: 7, red, blue }));
+  assert.equal(move.x, 4);
+  assert.ok(move.y === 2 || move.y === 4);
+});
+
+test('при исчерпанном общем таймере запасной ход не занимает мёртвую точку', () => {
+  const request = game({ red: [[2, 2]], dead: { red: [[2, 2]], blue: [] } });
+  const move = chooseMove({ ...request, timeLeftMs: 0 });
+  assert.deepEqual(move, { x: 2, y: 1 });
+  assert.equal(chooseMove({ ...game({ width: 1, height: 1, red: [[0, 0]] }), moveTimeoutMs: 0 }), null);
+});
+
+test('на безграничном поле выбирается соседняя свободная клетка без width и height', () => {
+  const request = game({ red: [[-1_000_000, 7]], blue: [[1_000_000, -7]],
+    dead: { red: [[-1_000_000, 7]], blue: [] } });
+  const field = { infinite: true };
+  const move = chooseMove({ ...request, field });
+  assert.equal(Math.max(Math.abs(move.x - 1_000_000), Math.abs(move.y + 7)), 1);
+  assert.deepEqual(chooseMove({ ...game({}), field }), { x: 0, y: 0 });
+});
