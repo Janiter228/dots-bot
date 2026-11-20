@@ -1,6 +1,8 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBotServer } from '../server/index.js';
+import { BOT_VERSION } from '../bot/index.js';
+import { nestedPosition } from './support/nested-capture.mjs';
 
 let server;
 let baseUrl;
@@ -34,7 +36,14 @@ test('GET /v1/info возвращает информацию о боте', async
   const data = await response.json();
   assert.equal(response.status, 200);
   assert.equal(data.specVersion, 'v1');
-  assert.equal(data.version, '0.3.1');
+  assert.equal(data.version, BOT_VERSION);
+});
+
+test('необязательные уведомления о партии возвращают 404', async () => {
+  for (const event of ['start', 'end']) {
+    const response = await fetch(`${baseUrl}/v1/game/${event}`, { method: 'POST' });
+    assert.equal(response.status, 404);
+  }
 });
 
 test('POST /v1/move возвращает свободную клетку на пустом поле', async () => {
@@ -104,6 +113,43 @@ const emptyPosition = {
   moveTimeoutMs: 50, timeLeftMs: 900000,
 };
 
+async function postMove(position) {
+  const response = await fetch(`${baseUrl}/v1/move`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Arena-Seq': String(position.moveNo) },
+    body: JSON.stringify(position),
+  });
+  assert.equal(response.status, 200);
+  return response.json();
+}
+
+test('повтор хода возвращает первый ответ, а другая партия обрабатывается независимо', async () => {
+  const position = { ...emptyPosition, gameId: 'repeat' };
+  const first = await postMove(position);
+  assert.deepEqual(first, { x: 1, y: 1 });
+  for (let i = 0; i < 3; i++) assert.deepEqual(await postMove(position), first);
+
+  const largerField = { ...position, field: { width: 5, height: 5 } };
+  // Изменённая позиция делает пересчёт наблюдаемым при том же ключе повтора.
+  assert.deepEqual(await postMove(largerField), first);
+  assert.deepEqual(await postMove({ ...largerField, gameId: 'different-game' }), { x: 2, y: 2 });
+  assert.deepEqual(await postMove({ ...largerField, moveNo: 2 }), { x: 2, y: 2 });
+
+  const response = await fetch(`${baseUrl}/v1/move`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Arena-Seq': '1' },
+    body: JSON.stringify({ ...position, points: { red: [], blue: [[1, 1]] } }),
+  });
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error.code, 'conflicting_position');
+});
+
+test('HTTP-ход при вложенном окружении указывает свободную клетку', async () => {
+  const { x, y } = await postMove(nestedPosition);
+  assert.ok(Number.isInteger(x) && x >= 0 && x < nestedPosition.field.width);
+  assert.ok(Number.isInteger(y) && y >= 0 && y < nestedPosition.field.height);
+  assert.ok(!Object.values(nestedPosition.points).flat().some(([px, py]) => px === x && py === y));
+});
+
 test('CORS preflight разрешает браузерную песочницу', async () => {
   const response = await fetch(`${baseUrl}/v1/move`, { method: 'OPTIONS',
     headers: { Origin: 'https://arena.projectset.ru', 'Access-Control-Request-Method': 'POST' } });
@@ -137,7 +183,8 @@ test('ошибочные запросы не мешают следующему �
 test('полное поле возвращает 409', async () => {
   const response = await fetch(`${baseUrl}/v1/move`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...emptyPosition, field: { width: 1, height: 1 }, points: { red: [[0, 0]], blue: [] } }),
+    body: JSON.stringify({ ...emptyPosition, gameId: 'full-field', field: { width: 1, height: 1 },
+      points: { red: [[0, 0]], blue: [] } }),
   });
   assert.equal(response.status, 409);
   assert.equal((await response.json()).error.code, 'no_free_moves');
