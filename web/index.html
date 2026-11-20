@@ -130,26 +130,26 @@
     return outside.map((value, i) => Number(!value && board[i] !== wall));
   }
 
-  function resolveCaptures(owners, n, mover, previousLive, placedIndex) {
-    // Начинаем со всех точек для проверки оживления, но новая точка
-    // внутри уже существовавшего чужого контура сразу мертва.
-    // Затем проверяем ходивший цвет и противоположный по очереди.
-    const live = owners.slice();
-    if (previousLive && enclosed(previousLive, n, 3 - mover)[placedIndex]) live[placedIndex] = 0;
-    const history = new Set();
-    for (let round = 0; round < 128; round++) {
-      const before = live.join('');
-      if (history.has(before)) throw new Error('Цикл пересчёта окружений. Требуется сверка с движком арены.');
-      history.add(before);
-      for (const wall of [mover, 3 - mover]) {
+  function resolveCaptures(owners, n, previousLive, placedIndex) {
+    const live = previousLive.slice();
+    live[placedIndex] = owners[placedIndex];
+    // Arena проверяет красные стены перед синими и делает до 20 проходов.
+    for (let round = 0; round < 20; round++) {
+      let changed = false;
+      for (const wall of [1, 2]) {
         const mask = enclosed(live, n, wall);
         for (let i = 0; i < owners.length; i++) {
-          if (owners[i] === 3 - wall) live[i] = mask[i] ? 0 : owners[i];
+          if (owners[i] !== 3 - wall) continue;
+          const updated = mask[i] ? 0 : owners[i];
+          if (live[i] !== updated) {
+            live[i] = updated;
+            changed = true;
+          }
         }
       }
-      if (live.join('') === before) return live;
+      if (!changed) break;
     }
-    throw new Error('Превышен предел пересчёта окружений. Требуется сверка с движком арены.');
+    return live;
   }
 
   function score(game) {
@@ -232,13 +232,7 @@
     const index = y * game.n + x;
     const owners = game.owners.slice();
     owners[index] = game.turn === 'red' ? 1 : 2;
-    let live;
-    try { live = resolveCaptures(owners, game.n, owners[index], game.live, index); }
-    catch (error) {
-      game.ended = true;
-      game.result = 'Партия остановлена: неоднозначный пересчёт правил';
-      log(error.message, 'error'); render(); return;
-    }
+    const live = resolveCaptures(owners, game.n, game.live, index);
     game.owners = owners; game.live = live; game.last = [x, y]; game.placed++;
     log(`Ход ${game.moveNo}: ${names[game.turn]} → (${x}, ${y})`, 'info', { score: score(game) });
     game.moveNo++;

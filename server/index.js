@@ -5,6 +5,8 @@ import { chooseMove, BOT_VERSION } from '../bot/index.js';
 
 const PORT = Number(process.env.PORT || 4003);
 const BODY_LIMIT_BYTES = 8 * 1024 * 1024;
+const MOVE_CACHE_IDLE_MS = 60 * 60 * 1000;
+const MAX_CACHED_GAMES = 128;
 
 function sendJson(res, statusCode, data) {
   res.writeHead(statusCode, {
@@ -163,6 +165,7 @@ function isLegalMove(move, request) {
 }
 
 export function createBotServer({ botToken = process.env.BOT_TOKEN } = {}) {
+  const games = new Map();
   return http.createServer(async (req, res) => {
     addCorsHeaders(req, res);
 
@@ -182,7 +185,7 @@ export function createBotServer({ botToken = process.env.BOT_TOKEN } = {}) {
     if (req.method === 'GET' && url.pathname === '/v1/info') {
       sendJson(res, 200, {
         name: 'Dots Bot',
-        version: '0.3.1',
+        version: BOT_VERSION,
         project: 'dots',
         specVersion: 'v1',
       });
@@ -223,31 +226,57 @@ export function createBotServer({ botToken = process.env.BOT_TOKEN } = {}) {
         return;
       }
 
-      try {
-        let move = chooseMove(request);
+      const { gameId, moveNo } = request;
+      const now = Date.now();
+      for (const [id, game] of games) {
+        if (now - game.lastAccess < MOVE_CACHE_IDLE_MS) break;
+        games.delete(id);
+      }
+      // Запросы обрабатываются одним процессом, а выбор хода синхронен.
+      const game = games.get(gameId) ?? { moves: new Map() };
+      game.lastAccess = now;
+      games.delete(gameId);
+      games.set(gameId, game);
+      if (games.size > MAX_CACHED_GAMES) games.delete(games.keys().next().value);
+      const cachedMove = game.moves.get(moveNo);
+      if (cachedMove) {
+        if (isLegalMove(cachedMove, request)) {
+          sendJson(res, 200, cachedMove);
+        } else {
+          sendError(res, 409, 'conflicting_position', 'Сохранённый ход недопустим для повторно переданной позиции');
+        }
+        return;
+      }
 
+      let move;
+      try {
+        move = chooseMove(request);
         // Не позволяем ошибке алгоритма превратиться в пропуск хода.
         // Если стратегия вернула некорректную клетку, выбираем любую свободную.
         if (!isLegalMove(move, request)) {
           console.warn('Алгоритм вернул недопустимый ход; используется запасной ход.');
           move = findAnyFreeMove(request);
         }
-
-        if (!move) {
-          sendError(res, 409, 'no_free_moves', 'На поле не осталось свободных пересечений');
-          return;
-        }
-
-        sendJson(res, 200, { x: move.x, y: move.y });
       } catch (error) {
         console.error('Ошибка при выборе хода:', error);
-        const fallbackMove = findAnyFreeMove(request);
-        if (fallbackMove) {
-          sendJson(res, 200, fallbackMove);
-        } else {
+        move = findAnyFreeMove(request);
+        if (!move) {
           sendError(res, 500, 'bot_error', 'Не удалось выбрать ход');
+          return;
         }
       }
+      if (!move) {
+        sendError(res, 409, 'no_free_moves', 'На поле не осталось свободных пересечений');
+        return;
+      }
+      const response = { x: move.x, y: move.y };
+      game.moves.set(moveNo, response);
+      sendJson(res, 200, response);
+      return;
+    }
+
+    if (req.method === 'POST' && ['/v1/game/start', '/v1/game/end'].includes(url.pathname)) {
+      sendError(res, 404, 'not_found', 'Маршрут не найден');
       return;
     }
 
