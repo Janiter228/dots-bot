@@ -1,5 +1,5 @@
 /**
- * Dots Bot v0.3.2 — поиск с общим таймером и тактическим углублением.
+ * Dots Bot v0.3.3 — поиск с приоритетом защиты от немедленного захвата.
  *
  * Что делает алгоритм:
  *  - использует правила связности из спецификации: точки соединяются по 8
@@ -646,9 +646,12 @@ export function chooseMove(request) {
   const blocks = dangers.filter(({ index }) => !enemy[index]);
   if (dangers.length === 0 && attacks.length === 1) return moveAt(attacks[0].index);
   if (dangers.length === 1 && blocks.length === 1 && attacks.length === 0) return moveAt(blocks[0].index);
-  let bestIndex = attacks[0]?.index ?? blocks[0]?.index ?? safe;
+  // При встречных угрозах запасной ход блокирует одиночное замыкание,
+  // если таймер не позволил проверить последствия размена.
+  const directBlock = dangers.length === 1 ? blocks[0]?.index : undefined;
+  const fallback = directBlock ?? attacks[0]?.index ?? blocks[0]?.index ?? safe;
   if (performance.now() >= deadline || !board.some((value, index) => value === EMPTY && index !== legal)) {
-    return moveAt(bestIndex);
+    return moveAt(fallback);
   }
 
   const forced = [...attacks, ...blocks].map(({ index }) => index);
@@ -657,14 +660,22 @@ export function chooseMove(request) {
     board, width, height, OUR_LIVE, ENEMY_LIVE,
     CONFIG.rootMoves, ordinaryDeadline, ours, enemy, forced, redCode,
   );
-  if (!rootMoves?.length) return moveAt(bestIndex);
-  if (forced.length === 0) bestIndex = rootMoves[0].index;
-  let bestScore = -Infinity;
+  if (!rootMoves?.length) return moveAt(fallback);
+  if (directBlock !== undefined) {
+    const blockPosition = rootMoves.findIndex(({ index }) => index === directBlock);
+    if (blockPosition > 0) rootMoves.unshift(rootMoves.splice(blockPosition, 1)[0]);
+  }
+  let lossFreeIndex = -1;
   const completed = [];
 
   for (const rootMove of rootMoves) {
     if (performance.now() >= ordinaryDeadline) break;
     const next = threats(rootMove.board, width, height);
+    const lossFree = !rootMove.selfCaptured && next.dangers.length === 0;
+    if (lossFree && lossFreeIndex < 0) lossFreeIndex = rootMove.index;
+    // Размен не вытесняет ход без немедленной потери, даже если на третьем
+    // полуходе получается отыграть очко. Если защиты нет, сравниваем размены.
+    if (!lossFree && lossFreeIndex >= 0) continue;
     const required = [...next.dangers, ...next.attacks.filter(({ index }) => !next.ours[index])];
 
     const replies = rankMoves(
@@ -696,16 +707,15 @@ export function chooseMove(request) {
 
     const bonus = rootMove.captured * WEIGHTS.rootCapture
       - (rootMove.selfCaptured ? WEIGHTS.rootSelfCapture : 0);
-    const finalScore = worstReplyScore + bonus;
-    completed.push({ rootMove, replies, bonus, finalScore });
-
-    if (finalScore > bestScore) {
-      bestScore = finalScore;
-      bestIndex = rootMove.index;
-    }
+    completed.push({ rootMove, replies, bonus, finalScore: worstReplyScore + bonus, lossFree });
   }
 
-  const shortlist = completed.sort((a, b) => b.finalScore - a.finalScore).slice(0, CONFIG.tacticalRoots);
+  const eligible = lossFreeIndex < 0 ? completed : completed.filter(({ lossFree }) => lossFree);
+  const shortlist = eligible.sort((a, b) => b.finalScore - a.finalScore).slice(0, CONFIG.tacticalRoots);
+  if (!shortlist.length) {
+    return moveAt(lossFreeIndex >= 0 ? lossFreeIndex : forced.length ? fallback : rootMoves[0].index);
+  }
+  const bestIndex = shortlist[0].rootMove.index;
   let deeperIndex = bestIndex;
   let deeperScore = -Infinity;
   let tactical = false;
@@ -725,4 +735,4 @@ export function chooseMove(request) {
   return moveAt(tactical ? deeperIndex : bestIndex);
 }
 
-export const BOT_VERSION = '0.3.2';
+export const BOT_VERSION = '0.3.3';
