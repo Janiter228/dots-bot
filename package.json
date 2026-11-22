@@ -4,7 +4,6 @@
   "type": "module",
   "scripts": {
     "start": "node server/index.js",
-    "test": "node --test tests/*.test.mjs",
-    "bench": "node bench/run.mjs"
+    "test": "node --test tests/*.test.mjs"
   }
 }
