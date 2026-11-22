@@ -11,7 +11,7 @@ npm test           # автотесты
 npm run bench     # скорость выбора хода на поле 100×100
 ```
 
-Через Docker: `docker compose up -d --build`.
+Для развёртывания используйте Docker Compose: подготовьте `.env` по [инструкции запуска](docs/RUNBOOK.md), затем выполните `docker compose up -d --build`.
 
 Для проверки в «Песочнице» на сайте арены укажите `http://localhost:4003`.
 Для «Проверки API» в кабинете нужен публичный https-адрес без редиректов.
@@ -76,11 +76,9 @@ dots-bot/
 │   ├── rules.test.mjs           тесты правил игры
 │   └── match.mjs                бот против бота
 └── docs/
-    ├── api.md                   контракт API
-    ├── STRATEGY.md              описание стратегии
-    ├── RUNBOOK.md               что делать при аварии
-    ├── ideas/                   идеи команды
-    └── decisions/               принятые решения
+    ├── STRATEGY_SHORT.md        краткое описание и история стратегии
+    ├── STRATEGY_LONG.md         подробный разбор алгоритма
+    └── RUNBOOK.md               запуск в Docker и диагностика
 ```
 
 ## Документация
@@ -88,17 +86,9 @@ dots-bot/
 | Документ | Что внутри |
 |---|---|
 | [SKILL.md](SKILL.md) | правила проекта и подсказки для ИИ-ассистента |
-| [docs/api.md](docs/api.md) | формат запроса и ответа, правила API |
-| [docs/STRATEGY.md](docs/STRATEGY.md) | текущая реализация, результаты и ограничения |
-| [docs/STRATEGY_V03.md](docs/STRATEGY_V03.md) | реализация minimax v0.3 и её ограничения |
-| [docs/STRATEGY_V031.md](docs/STRATEGY_V031.md) | v0.3.1: избегание своих и чужих закрытых территорий |
-| [docs/RUNBOOK.md](docs/RUNBOOK.md) | перезапуск, логи, смена адреса, откат версии |
-| [docs/ideas/README.md](docs/ideas/README.md) | как вести идеи, статусы |
-| [docs/ideas/algorithm.md](docs/ideas/algorithm.md) | идеи по алгоритму бота |
-| [docs/ideas/software.md](docs/ideas/software.md) | идеи по серверу и интерфейсу |
-| [docs/ideas/devops.md](docs/ideas/devops.md) | идеи по деплою и CI |
-| [docs/ideas/qa.md](docs/ideas/qa.md) | идеи по тестам и матчам |
-| [docs/decisions/README.md](docs/decisions/README.md) | принятые решения и почему |
+| [docs/STRATEGY_SHORT.md](docs/STRATEGY_SHORT.md) | основные принципы, история версий и ограничения |
+| [docs/STRATEGY_LONG.md](docs/STRATEGY_LONG.md) | правила захвата, отбор ходов, оценка и тактический поиск |
+| [docs/RUNBOOK.md](docs/RUNBOOK.md) | запуск в Docker, подключение к арене, диагностика и откат |
 | [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) | чек-лист для pull request |
 | [.github/CODEOWNERS](.github/CODEOWNERS) | кто ревьюит какие папки |
 

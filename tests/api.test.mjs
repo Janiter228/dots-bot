@@ -1,5 +1,6 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { BOT_VERSION } from '../bot/index.js';
 import { createBotServer } from '../server/index.js';
 
 let server;
@@ -30,7 +31,7 @@ test('GET /v1/info возвращает информацию о боте', async
   const data = await response.json();
   assert.equal(response.status, 200);
   assert.equal(data.specVersion, 'v1');
-  assert.equal(data.version, '0.3.1');
+  assert.equal(data.version, BOT_VERSION);
 });
 
 test('POST /v1/move возвращает свободную клетку на пустом поле', async () => {
