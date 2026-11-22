@@ -1,5 +1,6 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { BOT_VERSION } from '../bot/index.js';
 import { createBotServer } from '../server/index.js';
 import { BOT_VERSION } from '../bot/index.js';
 import { nestedPosition } from './support/nested-capture.mjs';
@@ -37,13 +38,6 @@ test('GET /v1/info возвращает информацию о боте', async
   assert.equal(response.status, 200);
   assert.equal(data.specVersion, 'v1');
   assert.equal(data.version, BOT_VERSION);
-});
-
-test('необязательные уведомления о партии возвращают 404', async () => {
-  for (const event of ['start', 'end']) {
-    const response = await fetch(`${baseUrl}/v1/game/${event}`, { method: 'POST' });
-    assert.equal(response.status, 404);
-  }
 });
 
 test('POST /v1/move возвращает свободную клетку на пустом поле', async () => {

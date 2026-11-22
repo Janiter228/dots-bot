@@ -3,89 +3,148 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Точки — человек против бота</title>
+  <meta name="theme-color" content="#f4f1e8">
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="icon" type="image/png" sizes="64x64" href="./favicon.png">
+  <link rel="shortcut icon" href="./favicon.png">
+  <title>Точки — тактическая студия</title>
   <style>
-    :root { color-scheme: dark; font: 15px/1.5 system-ui, sans-serif; --bg:#0b1221; --panel:#152139; --line:#2d4060; --muted:#a7bad4; --red:#ff6578; --blue:#69bcff; }
+    :root { color-scheme:light; font:16px/1.5 'Trebuchet MS',sans-serif; --paper:#f4f1e8; --panel:#fffcf5; --ink:#202d29; --muted:#565f56; --line:#d6d4c7; --red:#a62e28; --blue:#145c91; --lime:#daef87; --mono:ui-monospace,Consolas,monospace; }
     * { box-sizing:border-box; }
-    body { margin:0; background:var(--bg); color:#eef4ff; }
-    main { max-width:1440px; margin:auto; padding:24px; }
-    h1 { margin:0; font-size:clamp(24px,4vw,36px); letter-spacing:-.04em; }
-    h2 { font-size:17px; margin:0 0 12px; }
-    p { color:var(--muted); margin:6px 0 18px; }
-    .panel { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px; }
-    form { display:flex; flex-wrap:wrap; gap:14px; align-items:end; }
-    label { display:grid; gap:6px; font-size:13px; color:var(--muted); }
-    .address { flex:1; min-width:220px; }
-    input, select, button { font:inherit; border:1px solid var(--line); border-radius:9px; padding:10px 12px; background:#0d182c; color:#eef4ff; }
-    input[type=range] { padding:0; accent-color:var(--blue); width:140px; }
-    button { cursor:pointer; font-weight:650; }
-    button.primary { background:#456bea; border-color:#456bea; }
-    button:hover { filter:brightness(1.15); }
-    button:disabled { opacity:.5; cursor:default; }
+    [hidden] { display:none !important; }
+    body { margin:0; color:var(--ink); background:var(--paper); }
+    .masthead { border-bottom:1px solid var(--line); }
+    .masthead div, main { max-width:1280px; padding-inline:clamp(16px,4vw,48px); margin:auto; }
+    .masthead div { min-height:64px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .brand { display:inline-flex; align-items:center; gap:10px; color:inherit; text-decoration:none; font-weight:850; letter-spacing:.08em; }
+    .mark { width:27px; aspect-ratio:1; border-radius:8px; background:radial-gradient(circle at 34% 34%,var(--lime) 0 2px,transparent 3px),radial-gradient(circle at 66% 66%,#ff8d76 0 2px,transparent 3px),var(--ink); }
+    .eyebrow { font:700 11px/1.5 var(--mono); letter-spacing:.12em; text-transform:uppercase; }
+    .masthead .eyebrow { color:var(--muted); text-align:right; }
+    main { padding-bottom:32px; }
+    .hero { display:flex; align-items:end; justify-content:space-between; gap:20px; padding:clamp(24px,4vw,48px) 0 22px; position:relative; isolation:isolate; }
+    .hero:before { content:''; position:absolute; z-index:-1; inset:0 0 0 48%; background:radial-gradient(circle,#676b543b 1px,transparent 1.5px) 0 0/14px 14px; mask-image:linear-gradient(115deg,transparent 10%,#000 85%); pointer-events:none; }
+    .hero .eyebrow { color:var(--red); }
+    h1 { margin:0; font:500 clamp(42px,7vw,86px)/1 Georgia,serif; letter-spacing:-.075em; }
+    h1 em { color:var(--red); font-weight:500; }
+    p { margin:8px 0 0; color:var(--muted); }
+    h2 { margin:0; font-size:18px; letter-spacing:-.025em; }
+    .panel { min-width:0; border:1px solid var(--line); border-radius:16px; background:var(--panel); }
+    form { padding:14px; display:flex; flex-wrap:wrap; align-items:end; gap:10px; }
+    label { display:grid; gap:4px; color:var(--muted); font-size:12px; font-weight:700; }
+    .address { flex:1 1 210px; min-width:0; }
+    input,select,button { max-width:100%; font:inherit; color:var(--ink); }
+    input:not([type=range]),select,button { min-height:42px; padding:8px 12px; border-radius:8px; border:1px solid var(--line); background:var(--panel); }
+    button { cursor:pointer; font-size:13px; font-weight:750; transition:background .18s,border-color .18s; }
+    button:hover:not(:disabled) { background:#eaece0; border-color:#a6ae9d; }
+    button.primary { color:#fffdf1; background:var(--ink); border-color:var(--ink); }
+    button.primary:hover:not(:disabled) { background:#374d41; }
+    button:disabled { opacity:.42; cursor:default; }
+    button[aria-pressed=true] { background:var(--lime); border-color:#adb966; }
     :focus-visible { outline:3px solid var(--blue); outline-offset:3px; }
-    .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:16px 0; }
-    .stat { padding:14px 18px; }
-    .stat small { display:block; color:var(--muted); }
-    .stat strong { font-size:24px; }
+    .demo { flex:none; }
+    #settingsNotice { color:var(--red); margin:6px 0; }
+    .layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(270px,320px); align-items:start; gap:14px; margin-top:14px; }
+    .board-panel, .studio { padding:14px; }
+    .toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; padding-bottom:12px; }
+    .board-title { min-width:130px; flex:1; }
+    #status { display:block; font-size:13px; color:var(--muted); overflow-wrap:anywhere; }
+    .board-tools,.transport,.legend { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+    .board-tools label { min-width:70px; }
+    .board-tools input { width:76px; }
+    input[type=range] { margin:0; accent-color:#3e6039; cursor:pointer; }
+    #viewport { overflow:auto; height:clamp(290px,53vh,590px); background:#eeeadc radial-gradient(ellipse at center,#f8f4e7,transparent 75%); border:1px solid #d4cdbb; border-radius:11px; display:flex; }
+    canvas { display:block; flex:none; touch-action:pan-x pan-y; margin:auto; }
+    canvas:focus-visible { outline-offset:-3px; }
+    .legend { gap:8px 16px; padding-top:10px; color:var(--muted); font-size:12px; }
+    .legend span:last-child { margin-left:auto; }
     .red { color:var(--red); } .blue { color:var(--blue); }
-    .layout { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:16px; }
-    .toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:16px; margin-bottom:12px; }
-    .toolbar label { display:flex; align-items:center; }
-    #status { flex:1; font-weight:650; }
-    #viewport { overflow:auto; max-height:70vh; min-height:300px; background:#0d182c; border:1px solid var(--line); border-radius:10px; }
-    canvas { display:block; touch-action:pan-x pan-y; }
-    .legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:12px; color:var(--muted); font-size:13px; }
-    #log { list-style:none; margin:0; padding:0; max-height:480px; overflow:auto; font-size:13px; }
-    #log li { border-top:1px solid var(--line); padding:10px 0; overflow-wrap:anywhere; }
-    #log time { color:var(--muted); display:block; font-size:11px; }
-    #log .error { color:#ffb0ba; }
-    details { margin-top:16px; color:var(--muted); }
-    summary { cursor:pointer; color:#eef4ff; font-weight:650; }
-    .note { font-size:13px; margin:12px 0 0; }
-    @media(max-width:850px) { .layout { grid-template-columns:1fr; } #log { max-height:220px; } main { padding:14px; } }
-    @media(max-width:500px) { .stats { grid-template-columns:repeat(2,1fr); } }
+    .scoreboard { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:12px; }
+    .team { padding:10px; border-radius:9px; background:#fae7de; }
+    .team.blue { background:#e4edf4; }
+    .team strong { display:block; font:700 30px/1 var(--mono); margin-top:3px; }
+    .meta { display:flex; justify-content:space-between; flex-wrap:wrap; gap:5px; font:12px/1.5 var(--mono); color:var(--muted); }
+    .replay { margin-top:14px; padding:12px; border:1px solid var(--line); border-radius:10px; background:#f4f5e8; }
+    .replay input { width:100%; margin:8px 0; }
+    .transport button { flex:1; padding-inline:7px; min-height:38px; }
+    #replayStatus { min-height:3em; font-size:12px; }
+    .history-heading { margin:14px 0 4px; }
+    #log { list-style:none; margin:0; padding:0; max-height:220px; overflow:auto; font-size:12px; }
+    #log li { border-top:1px solid var(--line); padding:6px 0; overflow-wrap:anywhere; }
+    #log button { width:100%; text-align:left; min-height:32px; padding:4px 6px; border:0; font-size:12px; }
+    #log button[aria-current=true] { background:var(--lime); }
+    #log .error { color:var(--red); }
+    details { margin-top:14px; padding:12px 16px; color:var(--muted); }
+    summary { cursor:pointer; color:var(--ink); font-weight:750; }
+    @keyframes reveal { from { opacity:0; transform:translateY(8px); } }
+    @media(prefers-reduced-motion:no-preference) { .hero,.layout { animation:reveal .45s both; } .layout { animation-delay:.09s; } }
+    @media(max-width:850px) { .layout { grid-template-columns:1fr; } }
+    @media(max-width:560px) { .hero { align-items:start; flex-direction:column; gap:12px; } form label { flex:1 1 120px; } .address { flex-basis:100%; } .board-panel,.studio { padding:10px; } }
+    @media(prefers-reduced-motion:reduce) { button { transition:none; } }
   </style>
 </head>
 <body>
-<main>
-  <header><h1>Точки <span class="blue">/</span> игровая площадка</h1><p>Человек против HTTP-бота · красные начинают · без установки библиотек</p></header>
+<header class="masthead"><div><a class="brand" href="#studio"><span class="mark" aria-hidden="true"></span> ТОЧКИ</a><span class="eyebrow">Игровая студия</span></div></header>
+<main id="studio">
+  <section class="hero" aria-labelledby="title">
+    <div><span class="eyebrow">Игра на окружение</span><h1 id="title">Точки <em>и контуры</em></h1><p>Замыкайте цепочки, захватывайте точки и разбирайте решающие ходы.</p></div>
+    <button class="demo" id="demo" type="button">Показать захват ↗</button>
+  </section>
   <form id="settings" class="panel">
-    <label class="address">Адрес бота<input id="address" type="url" value="http://localhost:4003" required spellcheck="false"></label>
-    <label>Поле<select id="size"><option value="20">20 × 20</option><option value="50">50 × 50</option><option value="100">100 × 100</option></select></label>
-    <label>Ваш цвет<select id="human"><option value="red">Красные — первый ход</option><option value="blue">Синие — второй ход</option></select></label>
+    <label>Режим<select id="mode"><option value="local">Вдвоём на одном экране</option><option value="http">Против HTTP-бота</option></select></label>
+    <label>Поле<select id="size"><option value="9">9 × 9</option><option value="20" selected>20 × 20</option><option value="50">50 × 50</option><option value="100">100 × 100</option></select></label>
+    <label id="humanField" hidden>Ваш цвет<select id="human"><option value="red">Красные — первый ход</option><option value="blue">Синие — второй ход</option></select></label>
+    <label id="addressField" class="address" hidden>Адрес бота<input id="address" type="url" value="http://localhost:4003" disabled required spellcheck="false"></label>
     <button class="primary" type="submit">Новая партия</button>
   </form>
-  <section class="stats" aria-label="Состояние партии">
-    <div class="stat panel"><small>Захвачено красными</small><strong class="red" id="redScore">0</strong></div>
-    <div class="stat panel"><small>Захвачено синими</small><strong class="blue" id="blueScore">0</strong></div>
-    <div class="stat panel"><small>Следующий ход / поставлено</small><strong id="moveNo">1 / 0</strong></div>
-    <div class="stat panel"><small>Общее время ответов</small><strong id="clock">15:00</strong></div>
-  </section>
+  <p id="settingsNotice" role="alert" hidden></p>
   <div class="layout">
-    <section class="panel" aria-label="Игровое поле">
+    <section class="panel board-panel" aria-labelledby="boardTitle">
       <div class="toolbar">
-        <span id="status" role="status" aria-live="polite">Начните новую партию</span>
-        <label>Масштаб <input id="zoom" type="range" min="12" max="40" value="24"><output id="zoomValue">24 px</output></label>
-        <button id="retry" type="button" hidden>Продолжить: ход бота</button>
+        <div class="board-title"><h2 id="boardTitle">Игровое поле</h2><span id="status" role="status">Красные начинают</span></div>
+        <div class="board-tools">
+          <button id="territory" type="button" aria-pressed="false">Карта окружений</button>
+          <button id="undo" type="button" disabled>Отменить ход</button>
+          <button id="fit" type="button" title="Вписать поле в экран">Вписать</button>
+          <label>Шаг: <output id="zoomValue">24 px</output><input id="zoom" type="range" min="2" max="40" value="24"></label>
+          <button id="retry" type="button" hidden>Ход бота</button>
+        </div>
       </div>
-      <div id="viewport"><canvas id="board" aria-label="Поле игры в точки. Поставьте точку щелчком по пересечению сетки."></canvas></div>
-      <div class="legend"><span class="red">● Красные</span><span class="blue">● Синие</span><span>⊗ Мёртвые</span><span>◎ Последний ход: <b id="last">—</b></span></div>
+      <div id="viewport"><canvas id="board" tabindex="0" aria-label="Поле игры в точки" aria-describedby="boardHelp"></canvas></div>
+      <div class="legend" id="boardHelp"><span>⊗ Захваченная точка</span><span>Стрелки + Enter — ход с клавиатуры</span><span>◎ Последний ход: <b id="last">—</b></span></div>
     </section>
-    <aside class="panel"><h2>Журнал партии</h2><ul id="log" aria-label="События партии"></ul><p class="note">Подробности HTTP-запросов — в консоли браузера (F12 → Console).</p></aside>
+    <aside class="panel studio" aria-label="Счёт и разбор партии">
+      <div class="scoreboard">
+        <div class="team red"><span class="eyebrow">● Красные</span><strong id="redScore">0</strong><small>захвачено</small></div>
+        <div class="team blue"><span class="eyebrow">● Синие</span><strong id="blueScore">0</strong><small>захвачено</small></div>
+      </div>
+      <div class="meta"><span id="moveNo">Ход 1</span><span id="clock">Локальная игра</span></div>
+      <section class="replay" aria-labelledby="replayTitle">
+        <h2 id="replayTitle">Разбор партии</h2>
+        <p id="replayStatus">История появится после первого хода.</p>
+        <input id="history" type="range" min="0" max="0" value="0" aria-label="Позиция в истории" disabled>
+        <div class="transport">
+          <button id="prev" type="button" aria-label="Предыдущая позиция" disabled>←</button>
+          <button id="play" type="button" disabled>Смотреть</button>
+          <button id="next" type="button" aria-label="Следующая позиция" disabled>→</button>
+          <button id="resume" type="button" hidden>К игре</button>
+        </div>
+      </section>
+      <h2 class="history-heading">Журнал ходов</h2><ul id="log" aria-label="События партии"></ul>
+    </aside>
   </div>
   <details class="panel">
     <summary>Как играть и как считаются захваты</summary>
-    <p>Запустите сервер командой <code>npm start</code>, укажите его адрес и нажмите «Новая партия». Кликайте по свободным пересечениям в свой ход. Масштаб меняется ползунком, большое поле прокручивается. Время человека на обдумывание не расходует таймер.</p>
+    <p>Красные ходят первыми. Нажмите на свободное пересечение или выберите его стрелками и нажмите Enter. Для игры против бота запустите <code>npm start</code>, выберите HTTP-режим, укажите адрес и начните новую партию. Время человека на обдумывание не расходует таймер.</p>
     <p>Живые точки цвета служат стенами; остальные клетки связаны по четырём направлениям. Область, не касающаяся края, окружена. Вражеские точки внутри становятся мёртвыми и занимают клетки. Пустая область очков не даёт. После хода состояние пересчитывается до стабилизации с возможным оживлением точек.</p>
     <p>Это локальная реализация по описанию спецификации, ещё не сверенная с движком арены. Для неоднозначных циклов пересчёта игра останавливается с диагностикой. Нельзя утверждать совпадение счёта с ареной без такой сверки.</p>
-    <p>Ошибка запроса, ответ вне поля или таймаут 5 секунд — пропуск бота. После 11 пропусков подряд бот проигрывает технически. Для повторной попытки нажмите «Продолжить: ход бота» после своего хода. При заполнении поля или исчерпании общего времени победитель определяется по счёту.</p>
+    <p>Карта окрашивает замкнутые области, даже пустые. В «Разборе партии» можно вернуться к любому ходу; просмотр не изменяет текущую игру. Ошибка запроса, недопустимый ответ или таймаут 5 секунд — пропуск бота. После своего следующего хода нажмите «Ход бота» для повторной попытки. После 11 пропусков подряд бот проигрывает технически.</p>
   </details>
 </main>
 <script type="module">
   const $ = (id) => document.getElementById(id);
   const canvas = $('board');
   const ctx = canvas.getContext('2d');
-  const colors = { red: '#ff6578', blue: '#69bcff' };
+  const colors = { red: '#b2382d', blue: '#206498' };
   const names = { red: 'Красные', blue: 'Синие' };
   const opposite = (color) => color === 'red' ? 'blue' : 'red';
   const TIMEOUT = 5000;
@@ -94,15 +153,29 @@
   let pending = null;
   let cell = Number($('zoom').value);
   let lastClockPaint = 0;
+  let review = null;
+  let playback = null;
+  let showTerritory = false;
+  let fitted = true;
+  let cursor = null;
+  let masks = null;
+  let motion = null;
+  let frameRequest = 0;
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
-  function log(message, kind = 'info', detail) {
+  function log(message, kind = 'info', detail, frame = null) {
     const entry = document.createElement('li');
     entry.className = kind;
-    const time = document.createElement('time');
-    time.textContent = new Date().toLocaleTimeString('ru-RU');
-    entry.append(time, document.createTextNode(message));
+    if (frame === null) entry.textContent = message;
+    else {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.frame = frame;
+      button.textContent = message;
+      entry.append(button);
+    }
     $('log').prepend(entry);
-    while ($('log').children.length > 100) $('log').lastChild.remove();
+    while ($('log').children.length > 16) $('log').lastChild.remove();
     console.groupCollapsed(`%c ТОЧКИ %c ${message}`, `background:${kind === 'error' ? '#a92a40' : '#3758bf'};color:white;padding:3px 7px;border-radius:4px;font-weight:bold`, 'color:#8da9d9');
     if (detail !== undefined) console.log(detail);
     console.groupEnd();
@@ -160,18 +233,34 @@
     return result;
   }
 
-  function render() {
-    if (!state) return;
-    const game = state;
+  function draw(now) {
+    frameRequest = 0;
+    const game = review?.game ?? state;
+    if (!game) return;
     const n = game.n;
     const side = (n + 1) * cell;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.round(side * dpr);
-    canvas.height = Math.round(side * dpr);
+    const dpr = Math.min(window.devicePixelRatio || 1, 4096 / side);
+    const resolution = Math.round(side * dpr);
+    if (canvas.width !== resolution || canvas.height !== resolution) {
+      canvas.width = resolution;
+      canvas.height = resolution;
+    }
     canvas.style.width = `${side}px`;
     canvas.style.height = `${side}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.strokeStyle = '#293c57'; ctx.lineWidth = 1;
+    ctx.clearRect(0, 0, side, side);
+    if (showTerritory) {
+      if (masks?.live !== game.live) {
+        masks = { live: game.live, red: enclosed(game.live, n, 1), blue: enclosed(game.live, n, 2) };
+      }
+      for (const [key, fill] of [['red', '#b2382d32'], ['blue', '#20649838']]) {
+        ctx.fillStyle = fill;
+        masks[key].forEach((value, i) => {
+          if (value) ctx.fillRect((i % n + .5) * cell, (Math.floor(i / n) + .5) * cell, cell, cell);
+        });
+      }
+    }
+    ctx.strokeStyle = '#c1baa5'; ctx.lineWidth = Math.min(1, cell * .2);
     ctx.beginPath();
     for (let i = 0; i < n; i++) {
       const p = (i + 1) * cell;
@@ -179,13 +268,23 @@
       ctx.moveTo(p, cell); ctx.lineTo(p, n * cell);
     }
     ctx.stroke();
-    const radius = Math.max(2.5, cell * .19);
+    if (cell >= 16) {
+      ctx.font = `${Math.min(11, cell * .5)}px monospace`;
+      ctx.fillStyle = '#615e50';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const step = n > 20 ? 5 : n > 10 ? 2 : 1;
+      for (let i = 0; i < n; i += step) {
+        ctx.fillText(i, (i + 1) * cell, cell * .43);
+        ctx.fillText(i, cell * .43, (i + 1) * cell);
+      }
+    }
+    const radius = cell * .24;
     for (let i = 0; i < game.owners.length; i++) {
       if (!game.owners[i]) continue;
       const x = (i % n + 1) * cell;
       const y = (Math.floor(i / n) + 1) * cell;
       ctx.strokeStyle = ctx.fillStyle = colors[game.owners[i] === 1 ? 'red' : 'blue'];
-      ctx.lineWidth = 1.6;
+      ctx.lineWidth = Math.min(1.6, cell * .16);
       ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2);
       if (game.live[i]) ctx.fill();
       else {
@@ -194,20 +293,70 @@
         ctx.beginPath(); ctx.moveTo(x-r,y-r); ctx.lineTo(x+r,y+r); ctx.moveTo(x-r,y+r); ctx.lineTo(x+r,y-r); ctx.stroke();
       }
       if (game.last && game.last[0] === i % n && game.last[1] === Math.floor(i / n)) {
-        ctx.strokeStyle = '#ffe291'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(x,y,radius+4,0,Math.PI*2); ctx.stroke();
+        ctx.strokeStyle = '#4b562f'; ctx.lineWidth = Math.min(1.8, cell * .13);
+        ctx.beginPath(); ctx.arc(x,y,cell * .41,0,Math.PI*2); ctx.stroke();
       }
     }
-    const points = score(game);
+    if (cursor && !review && canPlace()) {
+      const [x, y] = cursor;
+      ctx.strokeStyle = colors[game.turn];
+      ctx.lineWidth = Math.min(2, cell * .14);
+      ctx.setLineDash([cell * .13, cell * .1]);
+      ctx.beginPath(); ctx.arc((x + 1) * cell, (y + 1) * cell, cell * .37, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (motion && !review && !reduceMotion.matches) {
+      const age = (now - motion.start) / 480;
+      if (age < 1) {
+        ctx.globalAlpha = 1 - Math.max(0, age);
+        ctx.strokeStyle = colors[motion.color]; ctx.lineWidth = Math.min(2, cell * .16);
+        for (const i of motion.indices) {
+          ctx.beginPath(); ctx.arc((i % n + 1) * cell, (Math.floor(i / n) + 1) * cell,
+            cell * (.3 + Math.max(0, age) * .52), 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+        queueDraw();
+      } else motion = null;
+    }
+  }
+
+  function queueDraw() {
+    if (!frameRequest) frameRequest = requestAnimationFrame(draw);
+  }
+
+  function render() {
+    const game = state;
+    const latest = game.frames.length - 1;
+    const frame = review?.index ?? latest;
+    const view = review?.game ?? game;
+    const points = game.frames[frame].score;
+    $('boardTitle').textContent = `Игровое поле · ${game.n}×${game.n}`;
     $('redScore').textContent = points.red;
     $('blueScore').textContent = points.blue;
-    $('moveNo').textContent = `${game.moveNo} / ${game.placed}`;
-    $('last').textContent = game.last ? `(${game.last.join(', ')})` : '—';
-    $('status').textContent = game.ended ? game.result
-      : game.busy ? 'Бот думает…' : `Ход: ${names[game.turn]}${game.turn === game.human ? ' — ваш' : ' — бот'}`;
-    $('retry').hidden = game.ended || game.busy || game.turn === game.human;
-    canvas.style.cursor = game.ended || game.busy || game.turn !== game.human ? 'default' : 'crosshair';
+    $('moveNo').textContent = `Ход ${view.moveNo}`;
+    $('last').textContent = view.last ? `(${view.last.join(', ')})` : '—';
+    const status = review ? 'Просмотр истории · поле не изменяется' : game.ended ? game.result
+      : game.busy ? 'Бот думает…' : `Ход: ${names[game.turn]}${game.mode === 'http' ? (game.turn === game.human ? ' — ваш' : ' — бот') : ''}`;
+    if ($('status').textContent !== status) $('status').textContent = status;
+    $('retry').hidden = Boolean(review) || game.mode !== 'http' || game.ended || game.busy || game.turn === game.human;
+    canvas.style.cursor = canPlace() ? 'crosshair' : 'default';
+    $('history').max = latest;
+    $('history').value = frame;
+    $('history').disabled = latest === 0;
+    $('history').setAttribute('aria-valuetext', `${frame} из ${latest}`);
+    $('replayStatus').textContent = latest ? `${frame} / ${latest} · ${game.frames[frame].label}` : 'История появится после первого хода.';
+    $('prev').disabled = frame === 0;
+    $('next').disabled = frame === latest;
+    $('play').disabled = latest === 0;
+    $('play').textContent = playback === null ? 'Смотреть' : 'Пауза';
+    $('resume').hidden = !review;
+    $('undo').disabled = game.busy || game.frames.length < 2;
+    for (const button of $('log').querySelectorAll('button')) {
+      if (Number(button.dataset.frame) === frame) button.setAttribute('aria-current', 'true');
+      else button.removeAttribute('aria-current');
+    }
     paintClock();
+    queueDraw();
   }
 
   function remaining() {
@@ -215,6 +364,10 @@
   }
   function paintClock() {
     if (!state) return;
+    if (state.mode !== 'http') {
+      $('clock').textContent = state.mode === 'demo' ? 'Учебный пример' : 'Локальная игра';
+      return;
+    }
     const seconds = Math.ceil(remaining() / 1000);
     $('clock').textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2,'0')}`;
   }
@@ -227,16 +380,69 @@
     render();
   }
 
+  function canPlace() {
+    return state && !review && !state.ended && !state.busy
+      && (state.mode === 'local' || state.mode === 'http' && state.turn === state.human);
+  }
+
+  function record(label, index = -1, owner = 0, changes = []) {
+    const { moveNo, last, turn } = state;
+    state.frames.push({ label, index, owner, changes, moveNo, last, turn, score: score(state) });
+    return state.frames.length - 1;
+  }
+
+  // История хранит только ходы и изменения живого состояния, не снимки поля.
+  function positionAt(index) {
+    const owners = new Uint8Array(state.owners.length);
+    const live = new Uint8Array(owners.length);
+    for (let i = 1; i <= index; i++) {
+      const step = state.frames[i];
+      if (step.index >= 0) owners[step.index] = step.owner;
+      for (const changed of step.changes) live[changed] = live[changed] ? 0 : owners[changed];
+    }
+    return { owners, live };
+  }
+
+  function inspect(index) {
+    const frame = state.frames[index];
+    const { owners, live } = positionAt(index);
+    review = { index, game: { n: state.n, owners, live, last: frame.last, moveNo: frame.moveNo } };
+    render();
+    if (frame.last) revealCell(...frame.last);
+  }
+
+  function stopPlayback() {
+    if (playback !== null) clearInterval(playback);
+    playback = null;
+  }
+
   function place(x, y) {
     const game = state;
     const index = y * game.n + x;
     const owners = game.owners.slice();
     owners[index] = game.turn === 'red' ? 1 : 2;
-    const live = resolveCaptures(owners, game.n, game.live, index);
+    let live;
+    try { live = resolveCaptures(owners, game.n, owners[index], game.live, index); }
+    catch (error) {
+      game.ended = true;
+      game.result = 'Партия остановлена: неоднозначный пересчёт правил';
+      log(error.message, 'error'); render(); return;
+    }
+    const changes = [];
+    const captured = [];
+    let revived = 0;
+    for (let i = 0; i < live.length; i++) {
+      if (game.live[i] !== live[i]) changes.push(i);
+      if ((game.live[i] || i === index) && !live[i]) captured.push(i);
+      if (!game.live[i] && live[i] && i !== index) revived++;
+    }
+    const label = `${game.moveNo}. ${names[game.turn]} · (${x}, ${y})`
+      + (captured.length ? ` · захвачено: ${captured.length}` : '') + (revived ? ` · ожило: ${revived}` : '');
+    if (captured.length) motion = { indices: captured, color: colors[game.turn], start: performance.now() };
     game.owners = owners; game.live = live; game.last = [x, y]; game.placed++;
-    log(`Ход ${game.moveNo}: ${names[game.turn]} → (${x}, ${y})`, 'info', { score: score(game) });
     game.moveNo++;
     game.turn = opposite(game.turn);
+    log(label, 'info', undefined, record(label, index, owners[index], changes));
     if (game.placed === game.owners.length) finish('Поле заполнено');
     else render();
   }
@@ -258,7 +464,7 @@
 
   async function botMove() {
     const game = state;
-    if (!game || game.ended || game.busy || game.turn === game.human) return;
+    if (!game || game.mode !== 'http' || game.ended || game.busy || game.turn === game.human) return;
     if (game.timeLeftMs <= 0) return finish('Время партии истекло');
     game.busy = true; game.started = performance.now();
     const controller = new AbortController();
@@ -266,7 +472,7 @@
     const timer = setTimeout(() => controller.abort(), Math.min(TIMEOUT, game.timeLeftMs));
     const body = requestBody(game);
     render();
-    log(`Запрос хода ${game.moveNo} → ${game.address}/v1/move`, 'info', body);
+    console.debug(`Запрос хода ${game.moveNo} → ${game.address}/v1/move`, body);
     let move;
     let failure;
     try {
@@ -293,64 +499,206 @@
     if (game.timeLeftMs <= 0) return finish('Время партии истекло');
     if (failure) {
       game.misses++;
-      log(`Пропуск бота ${game.misses}/11: ${failure}`, 'error');
-      if (game.misses > 10) return finish('Техническое поражение бота', game.human);
+      const label = `${game.moveNo}. Пропуск бота ${game.misses}/11: ${failure}`;
       game.moveNo++;
       game.turn = game.human;
+      log(label, 'error', undefined, record(label));
+      if (game.misses > 10) return finish('Техническое поражение бота', game.human);
       render();
     } else {
       game.misses = 0;
-      log(`Ответ за ${Math.round(elapsed)} мс`, 'info', move);
+      console.debug(`Ответ бота за ${Math.round(elapsed)} мс`, move);
       place(move.x, move.y);
     }
   }
 
-  $('settings').addEventListener('submit', (event) => {
-    event.preventDefault();
-    const url = new URL($('address').value);
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-      log('Укажите HTTP(S)-адрес без пароля, параметров и фрагмента', 'error'); return;
-    }
+  function startGame({ n, mode, human, address }) {
     pending?.abort();
-    const n = Number($('size').value);
+    pending = null;
+    stopPlayback();
+    review = cursor = masks = motion = null;
     state = { id: `web-${Date.now()}-${Math.random().toString(36).slice(2,8)}`, n,
       owners: new Uint8Array(n*n), live: new Uint8Array(n*n),
-      human: $('human').value, address: url.href.replace(/\/+$/, ''), turn: 'red', moveNo: 1,
+      mode, human, address, turn: 'red', moveNo: 1, frames: [],
       placed: 0, last: null, misses: 0, timeLeftMs: GAME_TIME, busy: false, ended: false };
     $('log').replaceChildren();
-    log(`Новая партия ${n}×${n}. Ваш цвет: ${names[state.human].toLowerCase()}`);
+    record('Начальная позиция');
+    fitted = true;
+    fitBoard();
     render();
     $('viewport').scrollTo(0, 0);
-    if (state.turn !== state.human) void botMove();
+    if (mode === 'http' && state.turn !== human) void botMove();
+  }
+
+  function syncSettings() {
+    const http = $('mode').value === 'http';
+    $('humanField').hidden = $('addressField').hidden = $('address').disabled = !http;
+    $('settingsNotice').hidden = true;
+  }
+
+  $('mode').addEventListener('change', syncSettings);
+  $('address').addEventListener('input', () => { $('settingsNotice').hidden = true; });
+  $('settings').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const mode = $('mode').value;
+    let address;
+    if (mode === 'http') {
+      const url = new URL($('address').value);
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+        $('settingsNotice').textContent = 'Укажите HTTP(S)-адрес без пароля, параметров и фрагмента.';
+        $('settingsNotice').hidden = false;
+        return;
+      }
+      address = url.href.replace(/\/+$/, '');
+    }
+    $('settingsNotice').hidden = true;
+    if (canReplaceGame()) startGame({ n: Number($('size').value), mode, human: $('human').value, address });
   });
-  canvas.addEventListener('click', (event) => {
-    if (!state || state.ended || state.busy || state.turn !== state.human) return;
+
+  function canReplaceGame() {
+    return !state || state.mode === 'demo' || state.ended || !state.placed || confirm('Заменить текущую партию? История этой партии будет очищена.');
+  }
+
+  $('demo').addEventListener('click', () => {
+    if (!canReplaceGame()) return;
+    $('mode').value = 'local'; $('size').value = '9'; syncSettings();
+    startGame({ n: 9, mode: 'demo' });
+    showTerritory = true;
+    $('territory').setAttribute('aria-pressed', 'true');
+    for (const [x, y] of [[4, 3], [4, 4], [3, 4], [1, 2], [4, 5], [6, 6], [5, 4]]) place(x, y);
+    state.ended = true;
+    state.result = 'Пример: четыре красные точки замкнули контур';
+    inspect(state.frames.length - 1);
+  });
+
+  function pointAt(event) {
     const rect = canvas.getBoundingClientRect();
     const px = event.clientX - rect.left;
     const py = event.clientY - rect.top;
     const x = Math.round(px / cell) - 1;
     const y = Math.round(py / cell) - 1;
-    if (x < 0 || y < 0 || x >= state.n || y >= state.n || state.owners[y*state.n+x]
-      || Math.hypot(px-(x+1)*cell, py-(y+1)*cell) > cell * .48) return;
-    const start = performance.now();
-    place(x,y);
-    state.timeLeftMs = Math.max(0, state.timeLeftMs - (performance.now() - start));
-    if (!state.ended && state.timeLeftMs <= 0) finish('Время партии истекло');
-    else if (!state.ended && state.turn !== state.human && state.misses === 0) void botMove();
-    else render();
+    return x >= 0 && y >= 0 && x < state.n && y < state.n
+      && Math.hypot(px - (x + 1) * cell, py - (y + 1) * cell) <= cell * .55 ? [x, y] : null;
+  }
+
+  function playAt(point) {
+    if (!point || !canPlace() || state.owners[point[1] * state.n + point[0]]) return;
+    place(...point);
+    if (state.mode === 'http' && !state.misses) void botMove();
+  }
+
+  function revealCell(x, y) {
+    const viewport = $('viewport');
+    const boardRect = canvas.getBoundingClientRect();
+    const viewRect = viewport.getBoundingClientRect();
+    const left = boardRect.left - viewRect.left + (x + 1) * cell;
+    const top = boardRect.top - viewRect.top + (y + 1) * cell;
+    if (left < cell || left > viewport.clientWidth - cell) viewport.scrollLeft += left - viewport.clientWidth / 2;
+    if (top < cell || top > viewport.clientHeight - cell) viewport.scrollTop += top - viewport.clientHeight / 2;
+  }
+
+  canvas.addEventListener('click', (event) => playAt(pointAt(event)));
+  canvas.addEventListener('pointermove', (event) => {
+    if (event.pointerType === 'touch' || !canPlace()) return;
+    const point = pointAt(event);
+    if (point?.[0] === cursor?.[0] && point?.[1] === cursor?.[1]) return;
+    cursor = point;
+    queueDraw();
+  });
+  canvas.addEventListener('pointerleave', () => { if (document.activeElement !== canvas) cursor = null; queueDraw(); });
+  canvas.addEventListener('focus', () => {
+    cursor ??= state.last ?? [state.n >> 1, state.n >> 1];
+    if (canvas.matches(':focus-visible')) revealCell(...cursor);
+    queueDraw();
+  });
+  canvas.addEventListener('blur', () => { cursor = null; queueDraw(); });
+  canvas.addEventListener('keydown', (event) => {
+    if (!canPlace()) return;
+    const directions = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); playAt(cursor); return; }
+    if (!Object.hasOwn(directions, event.key)) return;
+    event.preventDefault();
+    cursor ??= [state.n >> 1, state.n >> 1];
+    cursor = cursor.map((value, axis) => Math.max(0, Math.min(state.n - 1, value + directions[event.key][axis])));
+    revealCell(...cursor);
+    queueDraw();
+  });
+
+  const visitFrame = (index) => { stopPlayback(); inspect(index); };
+  $('history').addEventListener('input', (event) => visitFrame(Number(event.target.value)));
+  $('prev').addEventListener('click', () => visitFrame((review?.index ?? state.frames.length - 1) - 1));
+  $('next').addEventListener('click', () => visitFrame(review.index + 1));
+  $('log').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-frame]');
+    if (button) visitFrame(Number(button.dataset.frame));
+  });
+  $('play').addEventListener('click', () => {
+    if (playback !== null) { stopPlayback(); render(); return; }
+    const end = state.frames.length - 1;
+    const start = review && review.index < end ? review.index : 0;
+    playback = setInterval(() => {
+      const next = review.index + 1;
+      if (next >= end) stopPlayback();
+      inspect(next);
+    }, 650);
+    inspect(start);
+  });
+  $('resume').addEventListener('click', () => {
+    stopPlayback(); review = null; $('play').focus(); render();
+    if (state.last) revealCell(...state.last);
+  });
+  $('undo').addEventListener('click', () => {
+    if (state.busy || state.frames.length < 2) return;
+    stopPlayback();
+    const target = state.frames.length - 2;
+    const frame = state.frames[target];
+    const position = positionAt(target);
+    state.frames.length = target + 1;
+    state.owners = position.owners;
+    state.live = position.live;
+    state.moveNo = frame.moveNo;
+    state.turn = frame.turn;
+    state.last = frame.last;
+    state.placed = position.owners.reduce((count, owner) => count + Number(owner !== 0), 0);
+    state.misses = 0;
+    state.ended = false;
+    state.result = '';
+    review = null;
+    $('log').replaceChildren();
+    for (let i = 1; i < state.frames.length; i++) {
+      const step = state.frames[i];
+      log(step.label, step.label.includes('Пропуск') ? 'error' : 'info', undefined, i);
+    }
+    render();
+    if (state.mode === 'http' && state.turn !== state.human) void botMove();
   });
   $('retry').addEventListener('click', () => void botMove());
+  $('territory').addEventListener('click', () => {
+    showTerritory = !showTerritory;
+    $('territory').setAttribute('aria-pressed', String(showTerritory));
+    queueDraw();
+  });
+  function fitBoard() {
+    const viewport = $('viewport');
+    cell = Math.max(2, Math.min(40, Math.floor((Math.min(viewport.clientWidth, viewport.clientHeight) - 2) / (state.n + 1))));
+    $('zoom').value = cell;
+    $('zoomValue').textContent = `${cell} px`;
+    queueDraw();
+  }
+  $('fit').addEventListener('click', () => { fitted = true; fitBoard(); });
   $('zoom').addEventListener('input', () => {
+    fitted = false;
     cell = Number($('zoom').value);
     $('zoomValue').textContent = `${cell} px`;
-    render();
+    queueDraw();
   });
-  window.addEventListener('resize', () => render());
+  new ResizeObserver(() => { if (fitted) fitBoard(); else queueDraw(); }).observe($('viewport'));
   function tick(now) {
     if (state?.busy && now - lastClockPaint > 200) { paintClock(); lastClockPaint = now; }
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
+  syncSettings();
   $('settings').requestSubmit();
 </script>
 </body>

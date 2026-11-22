@@ -1,5 +1,5 @@
 /**
- * Dots Bot v0.3.3 — поиск с приоритетом защиты от немедленного захвата.
+ * Dots Bot v0.3.4 — поиск с приоритетом защиты от немедленного захвата.
  *
  * Что делает алгоритм:
  *  - использует правила связности из спецификации: точки соединяются по 8
@@ -12,10 +12,8 @@
  *    худший из них (2 полухода, выборочно до 4 в тактике);
  *  - ограничивает время поиска, оставляя запас до лимита API.
  *
- * Ограничение: в архиве нет эталонного движка арены. Поэтому гипотетическая
- * симуляция здесь применяет захват после каждого отдельного хода, но пока не
- * воспроизводит полный цикл вложенных окружений с оживлением ранее мёртвых точек.
- * Состояние текущей позиции берётся из points/dead, присланных самой ареной.
+ * Симуляция на конечном поле пересчитывает окружения и оживление точек.
+ * На безграничном поле используется разреженный позиционный выбор без minimax.
  */
 
 const EMPTY = 0;
@@ -344,7 +342,7 @@ export function applyMove(board, index, width, height, playerCode, enemyCode, en
     let changed = false;
     for (const [wall, victim] of [[redCode, blueCode], [blueCode, redCode]]) {
       // Если противник проверяется первым, его стены ещё не изменились.
-      const mask = round === 0 && wall === enemyCode && wall === redCode
+      const mask = round === 0 && wall === enemyCode && wall === redCode && enemyTerritory
         ? enemyTerritory
         : enclosed(nextBoard, width, height, wall);
       const dead = deadCodeFor(victim);
@@ -371,7 +369,7 @@ export function applyMove(board, index, width, height, playerCode, enemyCode, en
 
 // Точка сочленения в графе клеток, проходимых из-за края поля: если
 // поставить в неё стену, поддерево без обходного пути окажется в окружении.
-function captureMoves(board, width, height, wall, target, forbidden) {
+function captureMoves(board, width, height, wall, target, enemyTerritory, redCode) {
   const size = board.length;
   const seen = new Int32Array(size);
   const low = new Int32Array(size);
@@ -421,9 +419,13 @@ function captureMoves(board, width, height, wall, target, forbidden) {
 
   const moves = [];
   for (let index = 0; index < size; index += 1) {
-    if (captures[index] && board[index] === EMPTY && !forbidden[index]) {
-      moves.push({ index, count: captures[index] });
-    }
+    if (!captures[index] || board[index] !== EMPTY) continue;
+    // Красные проверяются первыми: замыкание внутри синей территории
+    // может разрушить её стены и спасти поставленную красную точку.
+    const count = !enemyTerritory[index] ? captures[index] : wall === redCode
+      ? applyMove(board, index, width, height, wall, target, enemyTerritory, redCode).captured
+      : 0;
+    if (count) moves.push({ index, count });
   }
   return moves.sort((a, b) => b.count - a.count || a.index - b.index);
 }
@@ -548,13 +550,13 @@ function findFreeIndex(board, width, height, ownTerritory, enemyTerritory) {
   return best;
 }
 
-function threats(board, width, height) {
+function threats(board, width, height, redCode) {
   const ours = enclosed(board, width, height, OUR_LIVE);
   const enemy = enclosed(board, width, height, ENEMY_LIVE);
   return {
     ours, enemy,
-    attacks: captureMoves(board, width, height, OUR_LIVE, ENEMY_LIVE, enemy),
-    dangers: captureMoves(board, width, height, ENEMY_LIVE, OUR_LIVE, ours),
+    attacks: captureMoves(board, width, height, OUR_LIVE, ENEMY_LIVE, enemy, redCode),
+    dangers: captureMoves(board, width, height, ENEMY_LIVE, OUR_LIVE, ours, redCode),
   };
 }
 
@@ -562,7 +564,7 @@ function threats(board, width, height) {
 // сильнейший оставшийся захват соперника. Это выборочная, не полная глубина.
 function tacticalLeaf(board, width, height, deadline, staticScore, redCode) {
   if (performance.now() >= deadline) return null;
-  const { enemy, attacks, dangers } = threats(board, width, height);
+  const { enemy, attacks, dangers } = threats(board, width, height, redCode);
   if (attacks.length === 0 && dangers.length === 0) return staticScore;
 
   const indices = new Set([...attacks, ...dangers].map(({ index }) => index));
@@ -573,7 +575,7 @@ function tacticalLeaf(board, width, height, deadline, staticScore, redCode) {
     if (performance.now() >= deadline) return null;
     const next = applyMove(board, index, width, height, OUR_LIVE, ENEMY_LIVE, enemy, redCode).board;
     const ownTerritory = enclosed(next, width, height, OUR_LIVE);
-    const counter = captureMoves(next, width, height, ENEMY_LIVE, OUR_LIVE, ownTerritory)[0];
+    const counter = captureMoves(next, width, height, ENEMY_LIVE, OUR_LIVE, ownTerritory, redCode)[0];
     const leaf = counter
       ? applyMove(next, counter.index, width, height, ENEMY_LIVE, OUR_LIVE, ownTerritory, redCode).board
       : next;
@@ -585,15 +587,84 @@ function tacticalLeaf(board, width, height, deadline, staticScore, redCode) {
 function chooseInfiniteMove(request, deadline) {
   const occupied = new Map();
   const key = (x, y) => `${x},${y}`;
+  const makeTerritory = () => ({ rows: new Map(), columns: new Map(), known: new Map() });
+  const territories = { red: makeTerritory(), blue: makeTerritory() };
+  function extend(bounds, line, coordinate) {
+    const range = bounds.get(line);
+    if (range) {
+      range[0] = Math.min(range[0], coordinate);
+      range[1] = Math.max(range[1], coordinate);
+    } else bounds.set(line, [coordinate, coordinate]);
+  }
+  let top = Infinity;
+  let left = Infinity;
   for (const color of ['red', 'blue']) {
-    for (const [x, y] of request.points[color]) occupied.set(key(x, y), color);
-    for (const [x, y] of request.dead?.[color] ?? []) occupied.set(key(x, y), null);
+    const dead = new Set((request.dead?.[color] ?? []).map(([x, y]) => key(x, y)));
+    const { rows, columns } = territories[color];
+    for (const [x, y] of request.points[color]) {
+      const k = key(x, y);
+      occupied.set(k, dead.has(k) ? null : color);
+      if (!dead.has(k)) {
+        extend(rows, y, x);
+        extend(columns, x, y);
+      }
+      if (y < top || (y === top && x < left)) {
+        top = y;
+        left = x;
+      }
+    }
   }
   if (occupied.size === 0) return { x: 0, y: 0 };
+
+  function isEnclosed(x, y, color) {
+    const { rows, columns, known } = territories[color];
+    // Если в каком-либо из четырёх направлений нет стены, есть прямой
+    // выход наружу. Не строим прямоугольник между удалёнными группами точек.
+    const hasExit = (px, py) => {
+      const row = rows.get(py);
+      const col = columns.get(px);
+      return !row || px < row[0] || px > row[1] || !col || py < col[0] || py > col[1];
+    };
+    if (hasExit(x, y)) return false;
+    const start = key(x, y);
+    if (known.has(start)) return known.get(start);
+    const visited = new Set([start]);
+    const queue = [[x, y]];
+    let enclosed = true;
+    for (let head = 0; head < queue.length; head++) {
+      if (performance.now() >= deadline) return null;
+      const [px, py] = queue[head];
+      for (const [nx, ny] of [[px - 1, py], [px + 1, py], [px, py - 1], [px, py + 1]]) {
+        const k = key(nx, ny);
+        if (visited.has(k) || occupied.get(k) === color) continue;
+        if (known.get(k) === false || hasExit(nx, ny)) {
+          enclosed = false;
+          break;
+        }
+        // Закрытая область из кеша не может дать выхода.
+        if (known.get(k) === true) continue;
+        visited.add(k);
+        queue.push([nx, ny]);
+      }
+      if (!enclosed) break;
+    }
+    for (const k of visited) known.set(k, enclosed);
+    return enclosed;
+  }
+
+  // Из любой свободной клетки верхней занятой строки можно уйти вверх.
+  // Этот ход безопасен, даже когда бюджет поиска уже исчерпан.
+  let fallbackX = left - 1;
+  if (!Number.isSafeInteger(fallbackX)) {
+    fallbackX = left + 1;
+    while (occupied.has(key(fallbackX, top))) fallbackX++;
+  }
   const seen = new Set();
-  let best = null;
+  const opponent = request.you === 'red' ? 'blue' : 'red';
+  let best = { x: fallbackX, y: top };
   let bestScore = -Infinity;
   for (const point of occupied.keys()) {
+    if (performance.now() >= deadline) return best;
     const [x, y] = point.split(',').map(Number);
     for (const [dx, dy] of NEIGHBORS_8) {
       const nx = x + dx;
@@ -601,8 +672,14 @@ function chooseInfiniteMove(request, deadline) {
       const candidate = key(nx, ny);
       if (!Number.isSafeInteger(nx) || !Number.isSafeInteger(ny)
           || occupied.has(candidate) || seen.has(candidate)) continue;
-      if (best && performance.now() >= deadline) return best;
+      if (performance.now() >= deadline) return best;
       seen.add(candidate);
+      const inEnemy = isEnclosed(nx, ny, opponent);
+      if (inEnemy === null) return best;
+      if (inEnemy) continue;
+      const inOwn = isEnclosed(nx, ny, request.you);
+      if (inOwn === null) return best;
+      if (inOwn) continue;
       let score = 0;
       for (const [ax, ay] of NEIGHBORS_8) {
         const color = occupied.get(key(nx + ax, ny + ay));
@@ -637,15 +714,32 @@ export function chooseMove(request) {
   const redCode = request.you === 'red' ? OUR_LIVE : ENEMY_LIVE;
   const moveAt = (index) => index < 0 ? null : { x: index % width, y: Math.floor(index / width) };
   const legal = findFreeIndex(board, width, height);
-  if (legal < 0 || thinkBudget === 0 || request.points.red.length + request.points.blue.length === 0) {
+  if (legal < 0 || request.points.red.length + request.points.blue.length === 0) {
     return moveAt(legal);
   }
 
-  const { ours, enemy, attacks, dangers } = threats(board, width, height);
+  if (performance.now() >= deadline) {
+    const ours = enclosed(board, width, height, OUR_LIVE);
+    const enemy = enclosed(board, width, height, ENEMY_LIVE);
+    return moveAt(findFreeIndex(board, width, height, ours, enemy));
+  }
+
+  const { ours, enemy, attacks, dangers } = threats(board, width, height, redCode);
   const safe = findFreeIndex(board, width, height, ours, enemy);
   const blocks = dangers.filter(({ index }) => !enemy[index]);
-  if (dangers.length === 0 && attacks.length === 1) return moveAt(attacks[0].index);
-  if (dangers.length === 1 && blocks.length === 1 && attacks.length === 0) return moveAt(blocks[0].index);
+  const quickAttack = dangers.length === 0 && attacks.length === 1 ? attacks[0].index : undefined;
+  const quickBlock = dangers.length === 1 && attacks.length === 0 ? blocks[0]?.index : undefined;
+  const quick = quickAttack ?? quickBlock;
+  if (quick !== undefined && performance.now() < deadline) {
+    // Само замыкание может поставить новую точку под контрзахват.
+    const next = applyMove(board, quick, width, height, OUR_LIVE, ENEMY_LIVE, enemy, redCode);
+    const nextOurs = enclosed(next.board, width, height, OUR_LIVE);
+    if (!next.selfCaptured
+      && (quickBlock !== undefined || next.captured > 0)
+      && captureMoves(next.board, width, height, ENEMY_LIVE, OUR_LIVE, nextOurs, redCode).length === 0) {
+      return moveAt(quick);
+    }
+  }
   // При встречных угрозах запасной ход блокирует одиночное замыкание,
   // если таймер не позволил проверить последствия размена.
   const directBlock = dangers.length === 1 ? blocks[0]?.index : undefined;
@@ -670,7 +764,7 @@ export function chooseMove(request) {
 
   for (const rootMove of rootMoves) {
     if (performance.now() >= ordinaryDeadline) break;
-    const next = threats(rootMove.board, width, height);
+    const next = threats(rootMove.board, width, height, redCode);
     const lossFree = !rootMove.selfCaptured && next.dangers.length === 0;
     if (lossFree && lossFreeIndex < 0) lossFreeIndex = rootMove.index;
     // Размен не вытесняет ход без немедленной потери, даже если на третьем
@@ -735,4 +829,4 @@ export function chooseMove(request) {
   return moveAt(tactical ? deeperIndex : bestIndex);
 }
 
-export const BOT_VERSION = '0.3.3';
+export const BOT_VERSION = '0.3.4';
