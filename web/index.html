@@ -3,703 +3,1489 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f4f1e8">
-  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
-  <link rel="icon" type="image/png" sizes="64x64" href="./favicon.png">
-  <link rel="shortcut icon" href="./favicon.png">
-  <title>Точки — тактическая студия</title>
+  <title>Точки</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='11' fill='%23191918'/%3E%3Cpath d='M24 8 40 24 24 40 8 24Z' fill='none' stroke='%23ff796c' stroke-width='2'/%3E%3Cg fill='%23ff796c'%3E%3Ccircle cx='24' cy='8' r='4'/%3E%3Ccircle cx='40' cy='24' r='4'/%3E%3Ccircle cx='24' cy='40' r='4'/%3E%3Ccircle cx='8' cy='24' r='4'/%3E%3C/g%3E%3Ccircle cx='24' cy='24' r='7' fill='%2384b6ff'/%3E%3Cpath d='m21 21 6 6m0-6-6 6' stroke='%23191918' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
   <style>
-    :root { color-scheme:light; font:16px/1.5 'Trebuchet MS',sans-serif; --paper:#f4f1e8; --panel:#fffcf5; --ink:#202d29; --muted:#565f56; --line:#d6d4c7; --red:#a62e28; --blue:#145c91; --lime:#daef87; --mono:ui-monospace,Consolas,monospace; }
-    * { box-sizing:border-box; }
-    [hidden] { display:none !important; }
-    body { margin:0; color:var(--ink); background:var(--paper); }
-    .masthead { border-bottom:1px solid var(--line); }
-    .masthead div, main { max-width:1280px; padding-inline:clamp(16px,4vw,48px); margin:auto; }
-    .masthead div { min-height:64px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
-    .brand { display:inline-flex; align-items:center; gap:10px; color:inherit; text-decoration:none; font-weight:850; letter-spacing:.08em; }
-    .mark { width:27px; aspect-ratio:1; border-radius:8px; background:radial-gradient(circle at 34% 34%,var(--lime) 0 2px,transparent 3px),radial-gradient(circle at 66% 66%,#ff8d76 0 2px,transparent 3px),var(--ink); }
-    .eyebrow { font:700 11px/1.5 var(--mono); letter-spacing:.12em; text-transform:uppercase; }
-    .masthead .eyebrow { color:var(--muted); text-align:right; }
-    main { padding-bottom:32px; }
-    .hero { display:flex; align-items:end; justify-content:space-between; gap:20px; padding:clamp(24px,4vw,48px) 0 22px; position:relative; isolation:isolate; }
-    .hero:before { content:''; position:absolute; z-index:-1; inset:0 0 0 48%; background:radial-gradient(circle,#676b543b 1px,transparent 1.5px) 0 0/14px 14px; mask-image:linear-gradient(115deg,transparent 10%,#000 85%); pointer-events:none; }
-    .hero .eyebrow { color:var(--red); }
-    h1 { margin:0; font:500 clamp(42px,7vw,86px)/1 Georgia,serif; letter-spacing:-.075em; }
-    h1 em { color:var(--red); font-weight:500; }
-    p { margin:8px 0 0; color:var(--muted); }
-    h2 { margin:0; font-size:18px; letter-spacing:-.025em; }
-    .panel { min-width:0; border:1px solid var(--line); border-radius:16px; background:var(--panel); }
-    form { padding:14px; display:flex; flex-wrap:wrap; align-items:end; gap:10px; }
-    label { display:grid; gap:4px; color:var(--muted); font-size:12px; font-weight:700; }
-    .address { flex:1 1 210px; min-width:0; }
-    input,select,button { max-width:100%; font:inherit; color:var(--ink); }
-    input:not([type=range]),select,button { min-height:42px; padding:8px 12px; border-radius:8px; border:1px solid var(--line); background:var(--panel); }
-    button { cursor:pointer; font-size:13px; font-weight:750; transition:background .18s,border-color .18s; }
-    button:hover:not(:disabled) { background:#eaece0; border-color:#a6ae9d; }
-    button.primary { color:#fffdf1; background:var(--ink); border-color:var(--ink); }
-    button.primary:hover:not(:disabled) { background:#374d41; }
-    button:disabled { opacity:.42; cursor:default; }
-    button[aria-pressed=true] { background:var(--lime); border-color:#adb966; }
-    :focus-visible { outline:3px solid var(--blue); outline-offset:3px; }
-    .demo { flex:none; }
-    #settingsNotice { color:var(--red); margin:6px 0; }
-    .layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(270px,320px); align-items:start; gap:14px; margin-top:14px; }
-    .board-panel, .studio { padding:14px; }
-    .toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; padding-bottom:12px; }
-    .board-title { min-width:130px; flex:1; }
-    #status { display:block; font-size:13px; color:var(--muted); overflow-wrap:anywhere; }
-    .board-tools,.transport,.legend { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
-    .board-tools label { min-width:70px; }
-    .board-tools input { width:76px; }
-    input[type=range] { margin:0; accent-color:#3e6039; cursor:pointer; }
-    #viewport { overflow:auto; height:clamp(290px,53vh,590px); background:#eeeadc radial-gradient(ellipse at center,#f8f4e7,transparent 75%); border:1px solid #d4cdbb; border-radius:11px; display:flex; }
-    canvas { display:block; flex:none; touch-action:pan-x pan-y; margin:auto; }
-    canvas:focus-visible { outline-offset:-3px; }
-    .legend { gap:8px 16px; padding-top:10px; color:var(--muted); font-size:12px; }
-    .legend span:last-child { margin-left:auto; }
-    .red { color:var(--red); } .blue { color:var(--blue); }
-    .scoreboard { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:12px; }
-    .team { padding:10px; border-radius:9px; background:#fae7de; }
-    .team.blue { background:#e4edf4; }
-    .team strong { display:block; font:700 30px/1 var(--mono); margin-top:3px; }
-    .meta { display:flex; justify-content:space-between; flex-wrap:wrap; gap:5px; font:12px/1.5 var(--mono); color:var(--muted); }
-    .replay { margin-top:14px; padding:12px; border:1px solid var(--line); border-radius:10px; background:#f4f5e8; }
-    .replay input { width:100%; margin:8px 0; }
-    .transport button { flex:1; padding-inline:7px; min-height:38px; }
-    #replayStatus { min-height:3em; font-size:12px; }
-    .history-heading { margin:14px 0 4px; }
-    #log { list-style:none; margin:0; padding:0; max-height:220px; overflow:auto; font-size:12px; }
-    #log li { border-top:1px solid var(--line); padding:6px 0; overflow-wrap:anywhere; }
-    #log button { width:100%; text-align:left; min-height:32px; padding:4px 6px; border:0; font-size:12px; }
-    #log button[aria-current=true] { background:var(--lime); }
-    #log .error { color:var(--red); }
-    details { margin-top:14px; padding:12px 16px; color:var(--muted); }
-    summary { cursor:pointer; color:var(--ink); font-weight:750; }
-    @keyframes reveal { from { opacity:0; transform:translateY(8px); } }
-    @media(prefers-reduced-motion:no-preference) { .hero,.layout { animation:reveal .45s both; } .layout { animation-delay:.09s; } }
-    @media(max-width:850px) { .layout { grid-template-columns:1fr; } }
-    @media(max-width:560px) { .hero { align-items:start; flex-direction:column; gap:12px; } form label { flex:1 1 120px; } .address { flex-basis:100%; } .board-panel,.studio { padding:10px; } }
-    @media(prefers-reduced-motion:reduce) { button { transition:none; } }
+    :root {
+      color-scheme: light dark;
+      --paper: light-dark(#f4f3ed, #181a18);
+      --panel: light-dark(#fdfcf7, #20221f);
+      --ink: light-dark(#23271f, #eff0e7);
+      --muted: light-dark(#555d50, #b1baac);
+      --line: light-dark(#d0d4c9, #41473e);
+      --grid: light-dark(#d0d9cb, #353e34);
+      --red: light-dark(#ac3028, #ff8576);
+      --blue: light-dark(#245ba5, #90b9ff);
+      --free: light-dark(#236649, #96e5b4);
+      --focus: light-dark(#285dab, #9fc4ff);
+      --shadow: 0 12px 30px #0001;
+      font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+      font-variant-numeric: tabular-nums;
+      background: var(--paper);
+      color: var(--ink);
+    }
+    :root[data-theme="light"] { color-scheme: light; }
+    :root[data-theme="dark"] { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { max-width: 1560px; margin: auto; padding: 18px clamp(12px, 3vw, 48px) 32px; }
+    h1, h2, p { margin: 0; }
+    h1 { font: 500 clamp(2.5rem, 6vw, 4.4rem)/.9 Georgia, serif; letter-spacing: -.065em; }
+    h2 { font: 500 1.5rem/1 Georgia, serif; }
+    header, .toolbar, .heading, .side-score { display: flex; align-items: center; gap: 8px; }
+    header { justify-content: space-between; padding: 12px 0 18px; gap: 12px; }
+    header nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand img { width: 34px; height: 34px; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(285px, 23rem); gap: 14px; align-items: start; }
+    .card, .board-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; min-width: 0; }
+    .board-card { overflow: hidden; box-shadow: var(--shadow); }
+    .card { padding: 13px; }
+    .card h2, .card summary { margin-bottom: 10px; }
+    .card:not([open]) summary { margin-bottom: 0; }
+    .stack { display: grid; align-content: start; gap: 12px; min-width: 0; }
+    .scoreboard { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; border-bottom: 1px solid var(--line); }
+    .side-score { justify-content: center; padding: 8px; gap: clamp(6px, 2vw, 24px); }
+    .side-score div { display: grid; gap: 2px; }
+    .side-score strong { font-size: clamp(1.65rem, 4vw, 2.5rem); line-height: 1; }
+    .side-score small, small, output { color: var(--muted); }
+    .red { color: var(--red); }
+    .blue { color: var(--blue); }
+    .board-card .heading, .board-card .toolbar { padding: 8px 12px; flex-wrap: wrap; }
+    .heading { justify-content: space-between; }
+    .heading small { display: block; }
+    #status { font-weight: 650; overflow-wrap: anywhere; }
+    #viewport { position: relative; background: var(--paper); }
+    #board {
+      display: block; width: 100%; height: clamp(300px, 55dvh, 750px);
+      touch-action: none; cursor: crosshair; outline-offset: -3px;
+    }
+    #board.dragging { cursor: grabbing !important; }
+    .board-card .toolbar { border-top: 1px solid var(--line); }
+    #zoom { width: clamp(60px, 13vw, 130px); }
+    button, input, select { font: inherit; color: inherit; accent-color: var(--free); }
+    button, input:not([type="range"], [type="checkbox"]), select {
+      border: 1px solid var(--line); background: var(--panel); border-radius: 7px; min-height: 36px;
+    }
+    button { cursor: pointer; padding: 4px 9px; }
+    button.primary { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+    button:disabled { opacity: .48; cursor: default; }
+    button[aria-pressed="true"], button:hover:enabled:not(.primary) { background: var(--paper); border-color: var(--muted); }
+    :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+    input:not([type="range"], [type="checkbox"]), select { width: 100%; padding: 5px 8px; }
+    label, .controls, summary { font-size: .91rem; }
+    summary { cursor: pointer; font-weight: 650; }
+    form, label.field { display: grid; gap: 5px; }
+    form { gap: 8px; }
+    .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+    .controls label:has(select) { display: flex; align-items: center; gap: 5px; }
+    .controls select { width: auto; }
+    #journal { list-style: none; padding: 0; margin: 0; max-height: 16rem; overflow: auto; }
+    #journal button { width: 100%; text-align: left; border: 0; border-radius: 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+    #history { width: 100%; margin: 9px 0; }
+    .notice { font-size: .875rem; color: var(--muted); overflow-wrap: anywhere; }
+    .error { color: var(--red); }
+    .result {
+      position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%);
+      width: min(90%, 27rem); pointer-events: none; text-align: center; padding: 24px;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
+    }
+    .result p { margin-top: 8px; }
+    .result button { pointer-events: auto; margin-top: 12px; }
+    dialog { max-width: calc(100% - 28px); border: 1px solid var(--line); border-radius: 12px; color: var(--ink); background: var(--panel); }
+    dialog::backdrop { background: #0008; }
+    dialog li { margin: 5px 0; }
+    .spark { display: block; width: 100%; height: 95px; }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+    :root[data-motion="off"] * { animation: none !important; }
+    @media (max-width: 830px) {
+      .layout { grid-template-columns: minmax(0, 1fr); }
+      #board { height: clamp(280px, 51dvh, 620px); }
+    }
   </style>
 </head>
 <body>
-<header class="masthead"><div><a class="brand" href="#studio"><span class="mark" aria-hidden="true"></span> ТОЧКИ</a><span class="eyebrow">Игровая студия</span></div></header>
-<main id="studio">
-  <section class="hero" aria-labelledby="title">
-    <div><span class="eyebrow">Игра на окружение</span><h1 id="title">Точки <em>и контуры</em></h1><p>Замыкайте цепочки, захватывайте точки и разбирайте решающие ходы.</p></div>
-    <button class="demo" id="demo" type="button">Показать захват ↗</button>
-  </section>
-  <form id="settings" class="panel">
-    <label>Режим<select id="mode"><option value="local">Вдвоём на одном экране</option><option value="http">Против HTTP-бота</option></select></label>
-    <label>Поле<select id="size"><option value="9">9 × 9</option><option value="20" selected>20 × 20</option><option value="50">50 × 50</option><option value="100">100 × 100</option></select></label>
-    <label id="humanField" hidden>Ваш цвет<select id="human"><option value="red">Красные — первый ход</option><option value="blue">Синие — второй ход</option></select></label>
-    <label id="addressField" class="address" hidden>Адрес бота<input id="address" type="url" value="http://localhost:4003" disabled required spellcheck="false"></label>
-    <button class="primary" type="submit">Новая партия</button>
-  </form>
-  <p id="settingsNotice" role="alert" hidden></p>
-  <div class="layout">
-    <section class="panel board-panel" aria-labelledby="boardTitle">
-      <div class="toolbar">
-        <div class="board-title"><h2 id="boardTitle">Игровое поле</h2><span id="status" role="status">Красные начинают</span></div>
-        <div class="board-tools">
-          <button id="territory" type="button" aria-pressed="false">Карта окружений</button>
-          <button id="undo" type="button" disabled>Отменить ход</button>
-          <button id="fit" type="button" title="Вписать поле в экран">Вписать</button>
-          <label>Шаг: <output id="zoomValue">24 px</output><input id="zoom" type="range" min="2" max="40" value="24"></label>
-          <button id="retry" type="button" hidden>Ход бота</button>
+  <header>
+    <div class="brand"><img id="mark" alt=""><h1>Точки</h1></div>
+    <nav aria-label="Настройки отображения">
+      <button id="theme" type="button">Тема: авто</button>
+      <button id="motion" type="button" aria-pressed="true">Анимация</button>
+      <button id="keys" type="button" aria-label="Горячие клавиши">?</button>
+    </nav>
+  </header>
+
+  <main class="layout">
+    <div class="stack">
+      <section class="board-card" aria-labelledby="boardTitle">
+        <div class="scoreboard" aria-label="Счёт">
+          <div class="side-score red"><strong id="redScore">0</strong><div>Красные<small id="redLive">0 живых</small></div></div>
+          <span aria-hidden="true">:</span>
+          <div class="side-score blue"><div>Синие<small id="blueLive">0 живых</small></div><strong id="blueScore">0</strong></div>
         </div>
-      </div>
-      <div id="viewport"><canvas id="board" tabindex="0" aria-label="Поле игры в точки" aria-describedby="boardHelp"></canvas></div>
-      <div class="legend" id="boardHelp"><span>⊗ Захваченная точка</span><span>Стрелки + Enter — ход с клавиатуры</span><span>◎ Последний ход: <b id="last">—</b></span></div>
-    </section>
-    <aside class="panel studio" aria-label="Счёт и разбор партии">
-      <div class="scoreboard">
-        <div class="team red"><span class="eyebrow">● Красные</span><strong id="redScore">0</strong><small>захвачено</small></div>
-        <div class="team blue"><span class="eyebrow">● Синие</span><strong id="blueScore">0</strong><small>захвачено</small></div>
-      </div>
-      <div class="meta"><span id="moveNo">Ход 1</span><span id="clock">Локальная игра</span></div>
-      <section class="replay" aria-labelledby="replayTitle">
-        <h2 id="replayTitle">Разбор партии</h2>
-        <p id="replayStatus">История появится после первого хода.</p>
-        <input id="history" type="range" min="0" max="0" value="0" aria-label="Позиция в истории" disabled>
-        <div class="transport">
-          <button id="prev" type="button" aria-label="Предыдущая позиция" disabled>←</button>
-          <button id="play" type="button" disabled>Смотреть</button>
-          <button id="next" type="button" aria-label="Следующая позиция" disabled>→</button>
+        <div class="heading">
+          <div><h2 id="boardTitle">Поле</h2><small id="turnInfo">Ход 1</small></div>
+          <div><p id="status" role="status">Ходят красные</p><small id="clock"></small></div>
+        </div>
+        <div id="viewport">
+          <canvas id="board" tabindex="0" aria-label="Игровое поле. Стрелки перемещают курсор. Enter ставит точку."></canvas>
+          <section id="result" class="result" hidden aria-labelledby="winner">
+            <h2 id="winner"></h2><p id="finishReason"></p>
+            <button id="showBoard" type="button">Посмотреть поле</button>
+          </section>
+        </div>
+        <div class="toolbar">
+          <button id="zoomOut" type="button" aria-label="Уменьшить масштаб">−</button>
+          <input id="zoom" type="range" min="1" max="75" step=".1" aria-label="Масштаб поля">
+          <button id="zoomIn" type="button" aria-label="Увеличить масштаб">+</button>
+          <button id="fit" type="button">Вписать поле в экран</button>
+          <button id="territory" type="button" aria-pressed="true">Территории</button>
+          <button id="threats" type="button" aria-pressed="false">Показать угрозы</button>
+          <small id="hintLegend" hidden></small>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="replayTitle">
+        <div class="heading"><h2 id="replayTitle">Разбор партии</h2><small id="frameLabel"></small></div>
+        <input id="history" type="range" min="0" value="0" aria-label="Ход в записи партии">
+        <div class="controls">
+          <button id="previous" type="button">Назад</button>
+          <button id="next" type="button">Вперёд</button>
+          <button id="play" type="button">Воспроизвести</button>
+          <label>Скорость <select id="speed"><option value=".5">½×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
           <button id="resume" type="button" hidden>К игре</button>
         </div>
       </section>
-      <h2 class="history-heading">Журнал ходов</h2><ul id="log" aria-label="События партии"></ul>
+    </div>
+
+    <aside class="stack">
+      <section class="card" aria-labelledby="settingsTitle">
+        <h2 id="settingsTitle">Партия</h2>
+        <form id="settings">
+          <label class="field">Режим
+            <select id="mode">
+              <option value="local">На двоих</option>
+              <option value="project">Против нашего бота</option>
+              <option value="http">Против другого HTTP-бота</option>
+              <option value="random">Против случайного бота</option>
+            </select>
+          </label>
+          <div class="pair">
+            <label class="field">Размер поля
+              <select id="size"><option value="20">20 × 20</option><option value="50">50 × 50</option><option value="100">100 × 100</option><option value="custom">Свой размер</option></select>
+            </label>
+            <label id="customField" class="field" hidden>Сторона поля
+              <input id="customSize" type="number" min="1" max="150" step="1" value="30" required>
+            </label>
+          </div>
+          <label id="humanField" class="field" hidden>Ваш цвет
+            <select id="human"><option value="red">Красные</option><option value="blue">Синие</option></select>
+          </label>
+          <div id="httpFields" class="stack" hidden>
+            <p id="projectBotHelp" class="notice" hidden>Локальный бот проекта. Для запуска выполните <code>npm start</code>.</p>
+            <label id="addressField" class="field">Адрес бота <input id="address" type="url" value="http://localhost:4003" required disabled spellcheck="false"></label>
+            <label id="tokenField" class="field">Токен <input id="token" type="password" autocomplete="off" placeholder="Необязательно"></label>
+            <label id="projectTokenField" class="field" hidden>Токен локального бота <input id="projectToken" type="password" autocomplete="off" placeholder="Необязательно"></label>
+            <div class="pair">
+              <label class="field">Лимит ответа
+                <select id="timeout"><option value="500">500 мс</option><option value="1500">1500 мс</option><option value="5000" selected>5000 мс</option></select>
+              </label>
+              <label id="chanceField" class="field">Случайный ход, %
+                <input id="chance" type="number" min="0" max="100" step="1" value="0">
+              </label>
+            </div>
+            <button id="health" type="button">Проверить бота</button>
+            <p id="healthStatus" class="notice" role="status" hidden></p>
+          </div>
+          <div class="controls">
+            <button class="primary" type="submit">Новая партия</button>
+            <button id="demo" type="button">Показать захват</button>
+            <button id="undo" type="button">Отменить</button>
+            <button id="resign" type="button">Сдаться</button>
+            <button id="retry" type="button" hidden>Повторить ход бота</button>
+          </div>
+          <p id="settingsNotice" class="notice error" role="status" hidden></p>
+        </form>
+      </section>
+
+      <section class="card" aria-labelledby="journalTitle">
+        <div class="heading"><h2 id="journalTitle">Журнал ходов</h2><small id="logCount"></small></div>
+        <p id="emptyLog" class="notice">Ходы появятся здесь.</p>
+        <ol id="journal" reversed></ol>
+      </section>
+
+      <details class="card" id="charts">
+        <summary>Графики партии</summary>
+        <p class="notice">Разница счёта (красные − синие)</p>
+        <canvas class="spark" id="scoresChart" aria-label="График разницы счёта"></canvas>
+        <p class="notice">Время ответа бота, мс</p>
+        <canvas class="spark" id="timesChart" aria-label="График времени ответа бота"></canvas>
+      </details>
+
+      <div class="card controls">
+        <button id="download" type="button">Скачать JSON</button>
+        <button id="upload" type="button">Открыть JSON</button>
+        <input id="file" type="file" accept=".json,application/json" hidden>
+        <p id="fileStatus" class="notice" role="status" hidden></p>
+      </div>
     </aside>
-  </div>
-  <details class="panel">
-    <summary>Как играть и как считаются захваты</summary>
-    <p>Красные ходят первыми. Нажмите на свободное пересечение или выберите его стрелками и нажмите Enter. Для игры против бота запустите <code>npm start</code>, выберите HTTP-режим, укажите адрес и начните новую партию. Время человека на обдумывание не расходует таймер.</p>
-    <p>Живые точки цвета служат стенами; остальные клетки связаны по четырём направлениям. Область, не касающаяся края, окружена. Вражеские точки внутри становятся мёртвыми и занимают клетки. Пустая область очков не даёт. После хода состояние пересчитывается до стабилизации с возможным оживлением точек.</p>
-    <p>Это локальная реализация по описанию спецификации, ещё не сверенная с движком арены. Для неоднозначных циклов пересчёта игра останавливается с диагностикой. Нельзя утверждать совпадение счёта с ареной без такой сверки.</p>
-    <p>Карта окрашивает замкнутые области, даже пустые. В «Разборе партии» можно вернуться к любому ходу; просмотр не изменяет текущую игру. Ошибка запроса, недопустимый ответ или таймаут 5 секунд — пропуск бота. После своего следующего хода нажмите «Ход бота» для повторной попытки. После 11 пропусков подряд бот проигрывает технически.</p>
-  </details>
-</main>
+  </main>
+
+  <dialog id="keyHelp" aria-labelledby="keyTitle">
+    <h2 id="keyTitle">Горячие клавиши</h2>
+    <ul>
+      <li>Z — отменить, N — новая партия</li>
+      <li>H — угрозы, T — тема, ? — эта справка</li>
+      <li>+ / − — масштаб, стрелки — прокрутка</li>
+      <li>На поле стрелки перемещают курсор, Enter ставит точку</li>
+      <li>Пробел — воспроизвести или поставить повтор на паузу</li>
+    </ul>
+    <form method="dialog"><button>Закрыть</button></form>
+  </dialog>
+
 <script type="module">
-  const $ = (id) => document.getElementById(id);
-  const canvas = $('board');
-  const ctx = canvas.getContext('2d');
-  const colors = { red: '#b2382d', blue: '#206498' };
-  const names = { red: 'Красные', blue: 'Синие' };
-  const opposite = (color) => color === 'red' ? 'blue' : 'red';
-  const TIMEOUT = 5000;
-  const GAME_TIME = 900000;
-  let state = null;
-  let pending = null;
-  let cell = Number($('zoom').value);
-  let lastClockPaint = 0;
-  let review = null;
-  let playback = null;
-  let showTerritory = false;
-  let fitted = true;
-  let cursor = null;
-  let masks = null;
-  let motion = null;
-  let frameRequest = 0;
-  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
-
-  function log(message, kind = 'info', detail, frame = null) {
-    const entry = document.createElement('li');
-    entry.className = kind;
-    if (frame === null) entry.textContent = message;
-    else {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.dataset.frame = frame;
-      button.textContent = message;
-      entry.append(button);
+  // BEGIN RULES — этот блок не зависит от браузера.
+  const Rules = (() => {
+    const name = ['', 'red', 'blue'];
+    function enclosed(live, n, wall) {
+      const outside = new Uint8Array(live.length);
+      const queue = new Int32Array(live.length);
+      let head = 0;
+      let tail = 0;
+      const visit = (i) => {
+        if (outside[i] || live[i] === wall) return;
+        outside[i] = 1;
+        queue[tail++] = i;
+      };
+      for (let i = 0; i < n; i++) {
+        visit(i);
+        visit((n - 1) * n + i);
+        visit(i * n);
+        visit(i * n + n - 1);
+      }
+      while (head < tail) {
+        const i = queue[head++];
+        if (i % n > 0) visit(i - 1);
+        if (i % n < n - 1) visit(i + 1);
+        if (i >= n) visit(i - n);
+        if (i < live.length - n) visit(i + n);
+      }
+      return outside.map((open, i) => Number(!open && live[i] !== wall));
     }
-    $('log').prepend(entry);
-    while ($('log').children.length > 16) $('log').lastChild.remove();
-    console.groupCollapsed(`%c ТОЧКИ %c ${message}`, `background:${kind === 'error' ? '#a92a40' : '#3758bf'};color:white;padding:3px 7px;border-radius:4px;font-weight:bold`, 'color:#8da9d9');
-    if (detail !== undefined) console.log(detail);
-    console.groupEnd();
-  }
 
-  // Окружённые клетки: всё, что не достижимо с края без прохода через стену.
-  function enclosed(board, n, wall) {
-    const outside = new Uint8Array(board.length);
-    const queue = new Int32Array(board.length);
-    let head = 0;
-    let tail = 0;
-    const visit = (i) => {
-      if (!outside[i] && board[i] !== wall) { outside[i] = 1; queue[tail++] = i; }
-    };
-    for (let i = 0; i < n; i++) {
-      visit(i); visit((n - 1) * n + i); visit(i * n); visit(i * n + n - 1);
-    }
-    while (head < tail) {
-      const i = queue[head++];
-      if (i % n > 0) visit(i - 1);
-      if (i % n < n - 1) visit(i + 1);
-      if (i >= n) visit(i - n);
-      if (i < board.length - n) visit(i + n);
-    }
-    return outside.map((value, i) => Number(!value && board[i] !== wall));
-  }
-
-  function resolveCaptures(owners, n, previousLive, placedIndex) {
-    const live = previousLive.slice();
-    live[placedIndex] = owners[placedIndex];
-    // Arena проверяет красные стены перед синими и делает до 20 проходов.
-    for (let round = 0; round < 20; round++) {
-      let changed = false;
-      for (const wall of [1, 2]) {
-        const mask = enclosed(live, n, wall);
-        for (let i = 0; i < owners.length; i++) {
-          if (owners[i] !== 3 - wall) continue;
-          const updated = mask[i] ? 0 : owners[i];
-          if (live[i] !== updated) {
-            live[i] = updated;
-            changed = true;
+    function resolve(owners, n, previous, index) {
+      const live = previous.slice();
+      live[index] = owners[index];
+      // Сохраняем порядок и предел проходов действующей реализации Arena v1.
+      for (let round = 0; round < 20; round++) {
+        let changed = false;
+        for (const wall of [1, 2]) {
+          const inside = enclosed(live, n, wall);
+          for (let i = 0; i < owners.length; i++) {
+            if (owners[i] !== 3 - wall) continue;
+            const value = inside[i] ? 0 : owners[i];
+            if (live[i] !== value) {
+              live[i] = value;
+              changed = true;
+            }
           }
         }
+        if (!changed) break;
       }
-      if (!changed) break;
+      return live;
     }
-    return live;
-  }
 
-  function score(game) {
-    const result = { red: 0, blue: 0 };
-    for (let i = 0; i < game.owners.length; i++) {
-      if (game.owners[i] && !game.live[i]) result[game.owners[i] === 1 ? 'blue' : 'red']++;
+    function count(owners, live) {
+      const score = { red: 0, blue: 0 };
+      const alive = { red: 0, blue: 0 };
+      for (let i = 0; i < owners.length; i++) {
+        if (live[i]) alive[name[live[i]]]++;
+        else if (owners[i]) score[name[3 - owners[i]]]++;
+      }
+      return { score, alive };
     }
-    return result;
-  }
 
-  function draw(now) {
-    frameRequest = 0;
-    const game = review?.game ?? state;
-    if (!game) return;
-    const n = game.n;
-    const side = (n + 1) * cell;
-    const dpr = Math.min(window.devicePixelRatio || 1, 4096 / side);
-    const resolution = Math.round(side * dpr);
-    if (canvas.width !== resolution || canvas.height !== resolution) {
-      canvas.width = resolution;
-      canvas.height = resolution;
-    }
-    canvas.style.width = `${side}px`;
-    canvas.style.height = `${side}px`;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, side, side);
-    if (showTerritory) {
-      if (masks?.live !== game.live) {
-        masks = { live: game.live, red: enclosed(game.live, n, 1), blue: enclosed(game.live, n, 2) };
-      }
-      for (const [key, fill] of [['red', '#b2382d32'], ['blue', '#20649838']]) {
-        ctx.fillStyle = fill;
-        masks[key].forEach((value, i) => {
-          if (value) ctx.fillRect((i % n + .5) * cell, (Math.floor(i / n) + .5) * cell, cell, cell);
-        });
-      }
-    }
-    ctx.strokeStyle = '#c1baa5'; ctx.lineWidth = Math.min(1, cell * .2);
-    ctx.beginPath();
-    for (let i = 0; i < n; i++) {
-      const p = (i + 1) * cell;
-      ctx.moveTo(cell, p); ctx.lineTo(n * cell, p);
-      ctx.moveTo(p, cell); ctx.lineTo(p, n * cell);
-    }
-    ctx.stroke();
-    if (cell >= 16) {
-      ctx.font = `${Math.min(11, cell * .5)}px monospace`;
-      ctx.fillStyle = '#615e50';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      const step = n > 20 ? 5 : n > 10 ? 2 : 1;
-      for (let i = 0; i < n; i += step) {
-        ctx.fillText(i, (i + 1) * cell, cell * .43);
-        ctx.fillText(i, cell * .43, (i + 1) * cell);
-      }
-    }
-    const radius = cell * .24;
-    for (let i = 0; i < game.owners.length; i++) {
-      if (!game.owners[i]) continue;
-      const x = (i % n + 1) * cell;
-      const y = (Math.floor(i / n) + 1) * cell;
-      ctx.strokeStyle = ctx.fillStyle = colors[game.owners[i] === 1 ? 'red' : 'blue'];
-      ctx.lineWidth = Math.min(1.6, cell * .16);
-      ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2);
-      if (game.live[i]) ctx.fill();
-      else {
-        ctx.stroke();
-        const r = radius * .65;
-        ctx.beginPath(); ctx.moveTo(x-r,y-r); ctx.lineTo(x+r,y+r); ctx.moveTo(x-r,y+r); ctx.lineTo(x+r,y-r); ctx.stroke();
-      }
-      if (game.last && game.last[0] === i % n && game.last[1] === Math.floor(i / n)) {
-        ctx.strokeStyle = '#4b562f'; ctx.lineWidth = Math.min(1.8, cell * .13);
-        ctx.beginPath(); ctx.arc(x,y,cell * .41,0,Math.PI*2); ctx.stroke();
-      }
-    }
-    if (cursor && !review && canPlace()) {
-      const [x, y] = cursor;
-      ctx.strokeStyle = colors[game.turn];
-      ctx.lineWidth = Math.min(2, cell * .14);
-      ctx.setLineDash([cell * .13, cell * .1]);
-      ctx.beginPath(); ctx.arc((x + 1) * cell, (y + 1) * cell, cell * .37, 0, Math.PI * 2); ctx.stroke();
-      ctx.setLineDash([]);
-    }
-    if (motion && !review && !reduceMotion.matches) {
-      const age = (now - motion.start) / 480;
-      if (age < 1) {
-        ctx.globalAlpha = 1 - Math.max(0, age);
-        ctx.strokeStyle = colors[motion.color]; ctx.lineWidth = Math.min(2, cell * .16);
-        for (const i of motion.indices) {
-          ctx.beginPath(); ctx.arc((i % n + 1) * cell, (Math.floor(i / n) + 1) * cell,
-            cell * (.3 + Math.max(0, age) * .52), 0, Math.PI * 2); ctx.stroke();
+    function checks() {
+      const diamond = [[3, 2], [2, 3], [4, 3], [3, 4]];
+      const inner = [[4, 3], [3, 4], [5, 4], [4, 5]];
+      const outer = [[3, 2], [5, 2], [2, 3], [6, 3], [1, 4], [7, 4],
+        [2, 5], [6, 5], [3, 6], [5, 6], [4, 7], [4, 1]];
+      const run = (n, steps) => {
+        const owners = new Uint8Array(n * n);
+        let live = owners.slice();
+        for (const [color, points] of steps) {
+          for (const [x, y] of points) {
+            const i = y * n + x;
+            owners[i] = color;
+            live = resolve(owners, n, live, i);
+          }
         }
-        ctx.globalAlpha = 1;
-        queueDraw();
-      } else motion = null;
+        return { owners, live, ...count(owners, live) };
+      };
+      const capture = run(7, [[2, [[3, 3]]], [1, diamond]]);
+      const intrusion = run(7, [[1, diamond], [2, [[3, 3]]]]);
+      const empty = run(7, [[1, diamond]]);
+      const prefix = [[1, [[4, 4]]], [2, inner]];
+      const nested = run(9, [...prefix, [1, outer]]);
+      return [
+        { position: 'Диагональный ромб', expected: 1, actual: capture.score.red },
+        { position: 'Вложенное окружение', expected: 4, actual: nested.score.red },
+        { position: 'Оживление центра', expected: '0 → 1', actual: `${run(9, prefix).live[40]} → ${nested.live[40]}` },
+        { position: 'Вход в окружение', expected: 0, actual: intrusion.live[24] },
+        { position: 'Пустая территория', expected: '1 / 0', actual: `${enclosed(empty.live, 7, 1)[24]} / ${empty.score.red}` },
+      ].map((test) => ({ ...test, passed: test.expected === test.actual }));
     }
+
+    return { enclosed, resolve, count, checks };
+  })();
+  // END RULES
+
+  const $ = (id) => document.getElementById(id);
+  const canvas = $('board');
+  const names = { red: 'Красные', blue: 'Синие' };
+  const ids = { red: 1, blue: 2 };
+  const other = (color) => color === 'red' ? 'blue' : 'red';
+  const resolveCaptures = Rules.resolve;
+  const score = ({ owners, live }) => Rules.count(owners, live).score;
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  const GAME_TIME = 900000;
+  const PROJECT_BOT_ADDRESS = 'http://localhost:4003';
+  const MAX_MISSES = 11;
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  let state, pending, review, playback, hover, animation, threatJob;
+  let cell = 20;
+  let pan = [0, 0], fitted = true, frameRequest = 0;
+  let territoryOn = true, threatsOn = false, motionOn = true, theme = 0;
+  let masks, threats, resultDismissed = false;
+
+  function newId() {
+    return `web-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }
 
-  function queueDraw() {
-    if (!frameRequest) frameRequest = requestAnimationFrame(draw);
+  function makeGame({ n, mode, human = 'red', address = PROJECT_BOT_ADDRESS, token = '', timeout = 5000, chance = 0 }) {
+    const owners = new Uint8Array(n * n);
+    return {
+      id: newId(), n, mode, human, address, token, timeout, chance, owners, live: owners.slice(),
+      turn: 'red', moveNo: 1, placed: 0, last: null, misses: 0, skips: 0, timeLeftMs: GAME_TIME,
+      stats: Rules.count(owners, owners), frames: [null], ended: false, busy: false, imported: false,
+    };
   }
 
-  function render() {
-    const game = state;
-    const latest = game.frames.length - 1;
-    const frame = review?.index ?? latest;
-    const view = review?.game ?? game;
-    const points = game.frames[frame].score;
-    $('boardTitle').textContent = `Игровое поле · ${game.n}×${game.n}`;
-    $('redScore').textContent = points.red;
-    $('blueScore').textContent = points.blue;
-    $('moveNo').textContent = `Ход ${view.moveNo}`;
-    $('last').textContent = view.last ? `(${view.last.join(', ')})` : '—';
-    const status = review ? 'Просмотр истории · поле не изменяется' : game.ended ? game.result
-      : game.busy ? 'Бот думает…' : `Ход: ${names[game.turn]}${game.mode === 'http' ? (game.turn === game.human ? ' — ваш' : ' — бот') : ''}`;
-    if ($('status').textContent !== status) $('status').textContent = status;
-    $('retry').hidden = Boolean(review) || game.mode !== 'http' || game.ended || game.busy || game.turn === game.human;
-    canvas.style.cursor = canPlace() ? 'crosshair' : 'default';
-    $('history').max = latest;
-    $('history').value = frame;
-    $('history').disabled = latest === 0;
-    $('history').setAttribute('aria-valuetext', `${frame} из ${latest}`);
-    $('replayStatus').textContent = latest ? `${frame} / ${latest} · ${game.frames[frame].label}` : 'История появится после первого хода.';
-    $('prev').disabled = frame === 0;
-    $('next').disabled = frame === latest;
-    $('play').disabled = latest === 0;
-    $('play').textContent = playback === null ? 'Смотреть' : 'Пауза';
-    $('resume').hidden = !review;
-    $('undo').disabled = game.busy || game.frames.length < 2;
-    for (const button of $('log').querySelectorAll('button')) {
-      if (Number(button.dataset.frame) === frame) button.setAttribute('aria-current', 'true');
-      else button.removeAttribute('aria-current');
-    }
-    paintClock();
-    queueDraw();
+  function coord(game, index) {
+    return [index % game.n, Math.floor(index / game.n)];
   }
 
-  function remaining() {
-    return Math.max(0, state.timeLeftMs - (state.busy ? performance.now() - state.started : 0));
+  function free(game, x, y) {
+    return Number.isSafeInteger(x) && Number.isSafeInteger(y)
+      && x >= 0 && y >= 0 && x < game.n && y < game.n && !game.owners[y * game.n + x];
   }
-  function paintClock() {
-    if (!state) return;
-    if (state.mode !== 'http') {
-      $('clock').textContent = state.mode === 'demo' ? 'Учебный пример' : 'Локальная игра';
-      return;
+
+  function finish(game, reason, winner) {
+    const { red, blue } = game.stats.score;
+    game.ended = true;
+    game.end = { reason, winner: winner ?? (red === blue ? null : red > blue ? 'red' : 'blue') };
+  }
+
+  function advance(game, { index = -1, elapsed = null, spent = elapsed ?? 0, error = '', random = false }) {
+    const color = game.turn;
+    const step = {
+      index, elapsed, spent, color, error, random, captured: [], revived: [], changes: [],
+    };
+    if (index >= 0) {
+      game.owners[index] = ids[color];
+      const live = resolveCaptures(game.owners, game.n, game.live, index);
+      for (let i = 0; i < live.length; i++) {
+        if (game.live[i] !== live[i]) step.changes.push(i);
+        if (live[i] && !game.live[i] && i !== index) step.revived.push(i);
+        if (!live[i] && (game.live[i] || i === index)) step.captured.push(i);
+      }
+      game.live = live;
+      game.last = coord(game, index);
+      game.placed++;
+      game.stats = Rules.count(game.owners, live);
+      if (game.mode === 'http' && color !== game.human) game.misses = 0;
+    } else {
+      game.misses++;
+      game.skips++;
     }
-    const seconds = Math.ceil(remaining() / 1000);
-    $('clock').textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2,'0')}`;
+    game.timeLeftMs = Math.max(0, game.timeLeftMs - spent);
+    game.turn = other(color);
+    game.moveNo++;
+    Object.assign(step, {
+      stats: game.stats, last: game.last, misses: game.misses, skips: game.skips, timeLeftMs: game.timeLeftMs,
+    });
+    game.frames.push(step);
+    if (game.placed === game.owners.length) finish(game, 'Поле заполнено');
+    else if (game.timeLeftMs === 0) finish(game, 'Время партии истекло');
+    else if (game.misses >= MAX_MISSES) finish(game, 'Техническое поражение бота', game.human);
+    return step;
   }
-  function finish(reason, winner) {
-    state.ended = true;
-    const points = score(state);
-    const victor = winner ?? (points.red > points.blue ? 'red' : points.blue > points.red ? 'blue' : null);
-    state.result = `${reason} · ${victor ? `победили ${names[victor].toLowerCase()}` : 'ничья'} · ${points.red}:${points.blue}`;
-    log(state.result);
-    render();
+
+  function positionAt(index, previous) {
+    const prefix = previous && previous.index <= index ? previous : null;
+    const owners = prefix?.owners ?? new Uint8Array(state.owners.length);
+    const live = prefix?.live ?? new Uint8Array(owners.length);
+    for (let i = (prefix?.index ?? 0) + 1; i <= index; i++) {
+      const step = state.frames[i];
+      if (step.index >= 0) owners[step.index] = ids[step.color];
+      for (const j of step.changes) live[j] = live[j] ? 0 : owners[j];
+    }
+    const step = state.frames[index];
+    return {
+      index, owners, live, last: step?.last ?? null,
+      stats: step?.stats ?? Rules.count(owners, live),
+      misses: step?.misses ?? 0, skips: step?.skips ?? 0,
+      timeLeftMs: step?.timeLeftMs ?? GAME_TIME,
+    };
+  }
+
+  function restore(target) {
+    const { index, ...position } = positionAt(target);
+    Object.assign(state, position, {
+      turn: target % 2 ? 'blue' : 'red', moveNo: target + 1, ended: false, end: undefined,
+      placed: position.stats.alive.red + position.stats.alive.blue + position.stats.score.red + position.stats.score.blue,
+    });
+    state.frames.length = target + 1;
+    review = hover = animation = null;
+    resultDismissed = false;
+    stopPlayback();
+    rebuildJournal();
+    invalidate();
+  }
+
+  function label(step, index) {
+    if (!step) return 'Начальная позиция';
+    const parts = [`${index}. ${names[step.color]}`];
+    parts.push(step.index >= 0 ? `(${coord(state, step.index).join(', ')})` : `пропуск · ${step.error}`);
+    if (step.elapsed !== null) parts.push(`${Math.round(step.elapsed)} мс`);
+    if (step.random) parts.push('случайный ход');
+    if (step.captured.length) parts.push(`захвачено ${step.captured.length}`);
+    if (step.revived.length) parts.push(`ожило ${step.revived.length}`);
+    return parts.join(' · ');
+  }
+
+  function addJournal(index) {
+    const entry = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.frame = index;
+    const step = state.frames[index];
+    button.className = step.index < 0 ? 'error' : step.color;
+    button.textContent = label(step, index);
+    entry.append(button);
+    const journal = $('journal');
+    journal.prepend(entry);
+    if (journal.children.length > 100) journal.lastElementChild.remove();
+  }
+
+  function rebuildJournal() {
+    $('journal').replaceChildren();
+    for (let i = Math.max(1, state.frames.length - 100); i < state.frames.length; i++) addJournal(i);
+  }
+
+  function liveView() {
+    return review ?? state;
+  }
+
+  function botTurn(game = state) {
+    return game.mode !== 'local' && game.turn !== game.human;
   }
 
   function canPlace() {
-    return state && !review && !state.ended && !state.busy
-      && (state.mode === 'local' || state.mode === 'http' && state.turn === state.human);
+    return !review && !state.ended && !state.busy && !botTurn();
   }
 
-  function record(label, index = -1, owner = 0, changes = []) {
-    const { moveNo, last, turn } = state;
-    state.frames.push({ label, index, owner, changes, moveNo, last, turn, score: score(state) });
-    return state.frames.length - 1;
+  function canRetry() {
+    return !review && !state.ended && !state.busy && state.mode === 'http'
+      && state.frames.at(-1)?.index === -1;
   }
 
-  // История хранит только ходы и изменения живого состояния, не снимки поля.
-  function positionAt(index) {
-    const owners = new Uint8Array(state.owners.length);
-    const live = new Uint8Array(owners.length);
-    for (let i = 1; i <= index; i++) {
-      const step = state.frames[i];
-      if (step.index >= 0) owners[step.index] = step.owner;
-      for (const changed of step.changes) live[changed] = live[changed] ? 0 : owners[changed];
+  function undoTarget() {
+    if (state.imported || state.busy) return -1;
+    if (state.mode === 'local') return state.frames.length - 2;
+    for (let i = state.frames.length - 1; i > 0; i--) {
+      if (state.frames[i].color === state.human) return i - 1;
     }
-    return { owners, live };
+    return -1;
   }
 
-  function inspect(index) {
-    const frame = state.frames[index];
-    const { owners, live } = positionAt(index);
-    review = { index, game: { n: state.n, owners, live, last: frame.last, moveNo: frame.moveNo } };
+  function undo() {
+    const target = undoTarget();
+    if (target < 0) return;
+    restore(target);
+    // После отката возникает новая ветка: сервер кэширует ответ по gameId и moveNo.
+    state.id = newId();
     render();
-    if (frame.last) revealCell(...frame.last);
   }
 
-  function stopPlayback() {
-    if (playback !== null) clearInterval(playback);
-    playback = null;
+  function resultText() {
+    return state.end.winner ? `победили ${names[state.end.winner].toLowerCase()}` : 'ничья';
   }
 
-  function place(x, y) {
-    const game = state;
-    const index = y * game.n + x;
-    const owners = game.owners.slice();
-    owners[index] = game.turn === 'red' ? 1 : 2;
-    let live;
-    try { live = resolveCaptures(owners, game.n, game.live, index); }
-    catch (error) {
-      game.ended = true;
-      game.result = 'Партия остановлена: неоднозначный пересчёт правил';
-      log(error.message, 'error'); render(); return;
+  function lastBotStep(index) {
+    if (state.mode === 'local') return null;
+    for (let i = index; i > 0; i--) {
+      if (state.frames[i].color !== state.human) return state.frames[i];
     }
-    const changes = [];
-    const captured = [];
-    let revived = 0;
-    for (let i = 0; i < live.length; i++) {
-      if (game.live[i] !== live[i]) changes.push(i);
-      if ((game.live[i] || i === index) && !live[i]) captured.push(i);
-      if (!game.live[i] && live[i] && i !== index) revived++;
+    return null;
+  }
+
+  function render() {
+    const view = liveView();
+    const end = state.frames.length - 1;
+    const index = review?.index ?? end;
+    const { alive, score: scores } = view.stats;
+    $('boardTitle').textContent = `Поле · ${state.n} × ${state.n}`;
+    for (const color of ['red', 'blue']) {
+      const element = $(`${color}Score`);
+      const value = String(scores[color]);
+      if (element.textContent !== value && motionOn && !reduceMotion.matches && !review) {
+        element.animate?.([{ transform: 'scale(1.32)' }, { transform: 'scale(1)' }], { duration: 380, easing: 'ease-out' });
+      }
+      element.textContent = value;
+      $(`${color}Live`).textContent = `${alive[color]} живых`;
     }
-    const label = `${game.moveNo}. ${names[game.turn]} · (${x}, ${y})`
-      + (captured.length ? ` · захвачено: ${captured.length}` : '') + (revived ? ` · ожило: ${revived}` : '');
-    if (captured.length) motion = { indices: captured, color: colors[game.turn], start: performance.now() };
-    game.owners = owners; game.live = live; game.last = [x, y]; game.placed++;
-    game.moveNo++;
-    game.turn = opposite(game.turn);
-    log(label, 'info', undefined, record(label, index, owners[index], changes));
-    if (game.placed === game.owners.length) finish('Поле заполнено');
-    else render();
+    const mover = state.mode === 'local' ? `Ходят ${names[state.turn].toLowerCase()}`
+      : `${names[state.turn]} · ${botTurn() ? 'ход бота' : 'ваш ход'}`;
+    const status = review ? 'Просмотр записи' : state.ended
+      ? `${state.end.reason} · ${resultText()} · ${scores.red}:${scores.blue}`
+      : state.busy ? 'Бот думает…' : mover;
+    if ($('status').textContent !== status) $('status').textContent = status;
+    $('turnInfo').textContent = review ? `Ход ${index} из ${end}` : `Ход ${state.moveNo}`;
+    const bot = lastBotStep(index);
+    $('clock').textContent = state.mode === 'local' ? '' :
+      `Ответ: ${bot?.elapsed == null ? '—' : Math.round(bot.elapsed) + ' мс'} · Пропуски: ${view.skips}${view.misses ? ` (подряд ${view.misses}/${MAX_MISSES})` : ''}`;
+    $('undo').disabled = undoTarget() < 0;
+    $('resign').disabled = Boolean(review || state.ended);
+    $('retry').hidden = !canRetry();
+    $('result').hidden = !(state.ended && !review && !resultDismissed);
+    if (state.ended) {
+      $('winner').textContent = state.end.winner ? `${names[state.end.winner]} победили` : 'Ничья';
+      $('finishReason').textContent = `${state.end.reason} · ${state.stats.score.red} : ${state.stats.score.blue}`;
+    }
+    $('history').max = end;
+    $('history').value = index;
+    $('history').disabled = end === 0;
+    $('frameLabel').textContent = label(state.frames[index], index);
+    $('previous').disabled = index === 0;
+    $('next').disabled = index === end;
+    $('play').disabled = end === 0;
+    $('play').textContent = playback ? 'Пауза' : 'Воспроизвести';
+    $('resume').hidden = !review || state.imported;
+    $('emptyLog').hidden = end !== 0;
+    $('logCount').textContent = end > 100 ? `Последние 100 из ${end}` : '';
+    $('download').disabled = !end && !state.ended;
+    canvas.style.cursor = canPlace() ? 'crosshair' : 'default';
+    queueDraw();
+  }
+
+  function startGame(options) {
+    pending?.abort();
+    pending = review = hover = animation = null;
+    stopPlayback();
+    state = makeGame(options);
+    resultDismissed = false;
+    rebuildJournal();
+    fitBoard();
+    invalidate();
+    render();
+    if (botTurn()) void botMove();
   }
 
   function requestBody(game) {
     const points = { red: [], blue: [] };
     const dead = { red: [], blue: [] };
     for (let i = 0; i < game.owners.length; i++) {
-      if (!game.owners[i]) continue;
-      const color = game.owners[i] === 1 ? 'red' : 'blue';
-      const point = [i % game.n, Math.floor(i / game.n)];
+      const owner = game.owners[i];
+      if (!owner) continue;
+      const color = owner === 1 ? 'red' : 'blue';
+      const point = coord(game, i);
       points[color].push(point);
       if (!game.live[i]) dead[color].push(point);
     }
-    return { gameId: game.id, moveNo: game.moveNo, you: game.turn,
+    return {
+      gameId: game.id, moveNo: game.moveNo, you: game.turn,
       field: { width: game.n, height: game.n }, points, dead, score: score(game), last: game.last,
-      moveTimeoutMs: TIMEOUT, timeLeftMs: Math.floor(game.timeLeftMs) };
+      moveTimeoutMs: game.timeout, timeLeftMs: Math.floor(game.timeLeftMs),
+    };
   }
 
-  async function botMove() {
-    const game = state;
-    if (!game || game.mode !== 'http' || game.ended || game.busy || game.turn === game.human) return;
-    if (game.timeLeftMs <= 0) return finish('Время партии истекло');
-    game.busy = true; game.started = performance.now();
-    const controller = new AbortController();
-    pending = controller;
-    const timer = setTimeout(() => controller.abort(), Math.min(TIMEOUT, game.timeLeftMs));
-    const body = requestBody(game);
+  function headers(token) {
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  async function responseJson(response) {
+    let data;
+    try { data = await response.json(); }
+    catch (error) {
+      if (error.name === 'AbortError') throw error;
+      if (response.ok) throw new Error('Бот вернул некорректный JSON');
+    }
+    if (!response.ok) {
+      const detail = data?.error?.message;
+      throw new Error(`HTTP ${response.status}${typeof detail === 'string' ? ` · ${detail.slice(0, 200)}` : ''}`);
+    }
+    return data;
+  }
+
+  function randomFree(game) {
+    let available = Math.floor(Math.random() * (game.owners.length - game.placed));
+    return game.owners.findIndex((owner) => !owner && available-- === 0);
+  }
+
+  function commit(step) {
+    advance(state, step);
+    const index = state.frames.length - 1;
+    const frame = state.frames[index];
+    animation = { from: performance.now(), step: frame, areas: captureAreas(frame.captured) };
+    addJournal(index);
+    invalidate();
     render();
-    console.debug(`Запрос хода ${game.moveNo} → ${game.address}/v1/move`, body);
-    let move;
-    let failure;
+  }
+
+  async function botMove(priorSpent = 0, forceHttp = false) {
+    const game = state;
+    if (game.ended || game.busy || !botTurn(game)) return;
+    const controller = new AbortController();
+    const { signal } = controller;
+    pending = controller;
+    game.busy = true;
+    const started = performance.now();
+    const random = game.mode === 'random' || (!forceHttp && game.chance > 0 && Math.random() * 100 < game.chance);
+    render();
+    let move, failure = '';
+    const limit = Math.min(game.timeout, game.timeLeftMs);
+    const timer = setTimeout(() => controller.abort(), limit);
     try {
-      const response = await fetch(`${game.address}/v1/move`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body), signal: controller.signal,
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      move = await response.json();
-      if (!move || !Number.isSafeInteger(move.x) || !Number.isSafeInteger(move.y)
-        || move.x < 0 || move.y < 0 || move.x >= game.n || move.y >= game.n
-        || game.owners[move.y * game.n + move.x]) throw new Error('Бот вернул недопустимый ход');
-      if (performance.now() - game.started >= TIMEOUT) throw new Error('Ответ получен после таймаута');
+      if (random) {
+        await new Promise((resolve) => setTimeout(resolve, 110));
+        const [x, y] = coord(game, randomFree(game));
+        move = { x, y };
+      } else {
+        move = await responseJson(await fetch(`${game.address}/v1/move`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...headers(game.token) },
+          body: JSON.stringify(requestBody(game)), signal,
+        }));
+      }
+      if (signal.aborted || performance.now() - started > limit) throw new Error('Истёк таймаут запроса');
+      if (!free(game, move?.x, move?.y)) throw new Error('Бот вернул недопустимые координаты');
     } catch (error) {
-      failure = error.name === 'AbortError' ? 'Истёк таймаут запроса' : error.message;
+      failure = signal.aborted || error.name === 'AbortError' ? 'Истёк таймаут запроса'
+        : error instanceof TypeError ? 'Сервер недоступен или запрос заблокирован браузером' : error.message;
     } finally {
       clearTimeout(timer);
     }
-    if (state !== game) return; // Поздний ответ не попадает в новую партию.
+    if (state !== game || pending !== controller) return;
     pending = null;
-    const elapsed = performance.now() - game.started;
-    game.timeLeftMs = Math.max(0, game.timeLeftMs - elapsed);
     game.busy = false;
-    if (game.timeLeftMs <= 0) return finish('Время партии истекло');
-    if (failure) {
-      game.misses++;
-      const label = `${game.moveNo}. Пропуск бота ${game.misses}/11: ${failure}`;
-      game.moveNo++;
-      game.turn = game.human;
-      log(label, 'error', undefined, record(label));
-      if (game.misses > 10) return finish('Техническое поражение бота', game.human);
-      render();
-    } else {
-      game.misses = 0;
-      console.debug(`Ответ бота за ${Math.round(elapsed)} мс`, move);
-      place(move.x, move.y);
-    }
+    const elapsed = performance.now() - started;
+    const index = failure ? -1 : move.y * game.n + move.x;
+    const spent = priorSpent + (random ? 0 : Math.ceil(elapsed));
+    // При повторе предыдущая попытка уже вычтена из оставшегося времени.
+    game.timeLeftMs += priorSpent;
+    commit({ index, elapsed, spent, error: failure, random });
   }
 
-  function startGame({ n, mode, human, address }) {
-    pending?.abort();
-    pending = null;
-    stopPlayback();
-    review = cursor = masks = motion = null;
-    state = { id: `web-${Date.now()}-${Math.random().toString(36).slice(2,8)}`, n,
-      owners: new Uint8Array(n*n), live: new Uint8Array(n*n),
-      mode, human, address, turn: 'red', moveNo: 1, frames: [],
-      placed: 0, last: null, misses: 0, timeLeftMs: GAME_TIME, busy: false, ended: false };
-    $('log').replaceChildren();
-    record('Начальная позиция');
-    fitted = true;
-    fitBoard();
-    render();
-    $('viewport').scrollTo(0, 0);
-    if (mode === 'http' && state.turn !== human) void botMove();
-  }
-
-  function syncSettings() {
-    const http = $('mode').value === 'http';
-    $('humanField').hidden = $('addressField').hidden = $('address').disabled = !http;
-    $('settingsNotice').hidden = true;
-  }
-
-  $('mode').addEventListener('change', syncSettings);
-  $('address').addEventListener('input', () => { $('settingsNotice').hidden = true; });
-  $('settings').addEventListener('submit', (event) => {
-    event.preventDefault();
-    const mode = $('mode').value;
-    let address;
-    if (mode === 'http') {
-      const url = new URL($('address').value);
-      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-        $('settingsNotice').textContent = 'Укажите HTTP(S)-адрес без пароля, параметров и фрагмента.';
-        $('settingsNotice').hidden = false;
-        return;
-      }
-      address = url.href.replace(/\/+$/, '');
-    }
-    $('settingsNotice').hidden = true;
-    if (canReplaceGame()) startGame({ n: Number($('size').value), mode, human: $('human').value, address });
-  });
-
-  function canReplaceGame() {
-    return !state || state.mode === 'demo' || state.ended || !state.placed || confirm('Заменить текущую партию? История этой партии будет очищена.');
-  }
-
-  $('demo').addEventListener('click', () => {
-    if (!canReplaceGame()) return;
-    $('mode').value = 'local'; $('size').value = '9'; syncSettings();
-    startGame({ n: 9, mode: 'demo' });
-    showTerritory = true;
-    $('territory').setAttribute('aria-pressed', 'true');
-    for (const [x, y] of [[4, 3], [4, 4], [3, 4], [1, 2], [4, 5], [6, 6], [5, 4]]) place(x, y);
-    state.ended = true;
-    state.result = 'Пример: четыре красные точки замкнули контур';
-    inspect(state.frames.length - 1);
-  });
-
-  function pointAt(event) {
-    const rect = canvas.getBoundingClientRect();
-    const px = event.clientX - rect.left;
-    const py = event.clientY - rect.top;
-    const x = Math.round(px / cell) - 1;
-    const y = Math.round(py / cell) - 1;
-    return x >= 0 && y >= 0 && x < state.n && y < state.n
-      && Math.hypot(px - (x + 1) * cell, py - (y + 1) * cell) <= cell * .55 ? [x, y] : null;
+  function retry() {
+    if (!canRetry()) return;
+    const failed = state.frames.at(-1);
+    const remaining = state.timeLeftMs;
+    restore(state.frames.length - 2);
+    state.timeLeftMs = remaining;
+    void botMove(failed.spent, true);
   }
 
   function playAt(point) {
-    if (!point || !canPlace() || state.owners[point[1] * state.n + point[0]]) return;
-    place(...point);
-    if (state.mode === 'http' && !state.misses) void botMove();
+    if (!point || !canPlace() || !free(state, ...point)) return;
+    commit({ index: point[1] * state.n + point[0] });
+    if (!state.ended && botTurn()) void botMove();
   }
 
-  function revealCell(x, y) {
-    const viewport = $('viewport');
-    const boardRect = canvas.getBoundingClientRect();
-    const viewRect = viewport.getBoundingClientRect();
-    const left = boardRect.left - viewRect.left + (x + 1) * cell;
-    const top = boardRect.top - viewRect.top + (y + 1) * cell;
-    if (left < cell || left > viewport.clientWidth - cell) viewport.scrollLeft += left - viewport.clientWidth / 2;
-    if (top < cell || top > viewport.clientHeight - cell) viewport.scrollTop += top - viewport.clientHeight / 2;
+  function resign() {
+    if (review || state.ended) return;
+    pending?.abort();
+    pending = null;
+    state.busy = false;
+    finish(state, 'Сдача', other(state.mode === 'local' ? state.turn : state.human));
+    render();
   }
 
-  canvas.addEventListener('click', (event) => playAt(pointAt(event)));
-  canvas.addEventListener('pointermove', (event) => {
-    if (event.pointerType === 'touch' || !canPlace()) return;
-    const point = pointAt(event);
-    if (point?.[0] === cursor?.[0] && point?.[1] === cursor?.[1]) return;
-    cursor = point;
-    queueDraw();
-  });
-  canvas.addEventListener('pointerleave', () => { if (document.activeElement !== canvas) cursor = null; queueDraw(); });
-  canvas.addEventListener('focus', () => {
-    cursor ??= state.last ?? [state.n >> 1, state.n >> 1];
-    if (canvas.matches(':focus-visible')) revealCell(...cursor);
-    queueDraw();
-  });
-  canvas.addEventListener('blur', () => { cursor = null; queueDraw(); });
-  canvas.addEventListener('keydown', (event) => {
-    if (!canPlace()) return;
-    const directions = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); playAt(cursor); return; }
-    if (!Object.hasOwn(directions, event.key)) return;
-    event.preventDefault();
-    cursor ??= [state.n >> 1, state.n >> 1];
-    cursor = cursor.map((value, axis) => Math.max(0, Math.min(state.n - 1, value + directions[event.key][axis])));
-    revealCell(...cursor);
-    queueDraw();
-  });
+  function centered(size) {
+    return Math.max(0, (size - (state.n + 1) * cell) / 2);
+  }
 
-  const visitFrame = (index) => { stopPlayback(); inspect(index); };
-  $('history').addEventListener('input', (event) => visitFrame(Number(event.target.value)));
-  $('prev').addEventListener('click', () => visitFrame((review?.index ?? state.frames.length - 1) - 1));
-  $('next').addEventListener('click', () => visitFrame(review.index + 1));
-  $('log').addEventListener('click', (event) => {
-    const button = event.target.closest('[data-frame]');
-    if (button) visitFrame(Number(button.dataset.frame));
-  });
-  $('play').addEventListener('click', () => {
-    if (playback !== null) { stopPlayback(); render(); return; }
+  function boundPan() {
+    pan = [canvas.clientWidth, canvas.clientHeight].map((size, axis) =>
+      clamp(pan[axis], Math.min(0, size - (state.n + 1) * cell), 0));
+  }
+
+  function fitBoard() {
+    fitted = true;
+    cell = Math.max(1, Math.min(canvas.clientWidth, canvas.clientHeight) / (state.n + 1));
+    pan = [0, 0];
+    updateZoom();
+  }
+
+  function updateZoom() {
+    $('zoom').max = Math.max(100, Math.ceil(cell));
+    $('zoom').value = cell;
+    $('zoom').setAttribute('aria-valuetext', `${cell.toFixed(1)} пикселя на клетку`);
+    queueDraw();
+  }
+
+  function zoomTo(value, anchor, target = anchor) {
+    fitted = false;
+    const size = [canvas.clientWidth, canvas.clientHeight];
+    const boardPoint = anchor.map((coordinate, axis) => (coordinate - centered(size[axis]) - pan[axis]) / cell);
+    cell = clamp(value, 1, Math.max(100, Math.min(...size) / (state.n + 1)));
+    pan = target.map((coordinate, axis) => coordinate - centered(size[axis]) - boardPoint[axis] * cell);
+    boundPan();
+    updateZoom();
+  }
+
+  function zoomBy(factor) {
+    zoomTo(cell * factor, [canvas.clientWidth / 2, canvas.clientHeight / 2]);
+  }
+
+  function origin() {
+    return [pan[0] + centered(canvas.clientWidth) + cell, pan[1] + centered(canvas.clientHeight) + cell];
+  }
+
+  function pointAt(event) {
+    const bounds = canvas.getBoundingClientRect();
+    const [left, top] = origin();
+    const x = (event.clientX - bounds.left - left) / cell;
+    const y = (event.clientY - bounds.top - top) / cell;
+    const grid = [Math.round(x), Math.round(y)];
+    return grid.every((v) => v >= 0 && v < state.n) && Math.hypot(x - grid[0], y - grid[1]) <= .63 ? grid : null;
+  }
+
+  function reveal([x, y]) {
+    const loc = origin();
+    const size = [canvas.clientWidth, canvas.clientHeight];
+    for (const [axis, coordinate] of [x, y].entries()) {
+      const visible = loc[axis] + coordinate * cell;
+      if (visible < cell / 2 || visible > size[axis] - cell / 2) pan[axis] += size[axis] / 2 - visible;
+    }
+    boundPan();
+  }
+
+  function queueDraw() {
+    if (!frameRequest) frameRequest = requestAnimationFrame(draw);
+  }
+
+  function surface(element) {
+    const { clientWidth: width, clientHeight: height } = element;
+    if (!width || !height) return null;
+    const scale = window.devicePixelRatio || 1;
+    const px = Math.round(width * scale), py = Math.round(height * scale);
+    if (element.width !== px) element.width = px;
+    if (element.height !== py) element.height = py;
+    const ctx = element.getContext('2d');
+    ctx.setTransform(px / width, 0, 0, py / height, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    return { ctx, width, height };
+  }
+
+  let palette;
+  function readPalette() {
+    const probe = document.createElement('span');
+    probe.hidden = true;
+    document.body.append(probe);
+    const colors = {};
+    for (const name of ['red', 'blue', 'grid', 'muted', 'free', 'ink']) {
+      probe.style.color = `var(--${name})`;
+      colors[name] = getComputedStyle(probe).color;
+    }
+    probe.remove();
+    return [colors.grid, colors.red, colors.blue, colors.muted, colors.free, colors.ink];
+  }
+
+  function invalidate() {
+    masks = null;
+    animation = review ? null : animation;
+    scheduleThreats();
+    queueCharts();
+  }
+
+  function scheduleThreats() {
+    threats = null;
+    const job = {};
+    threatJob = job;
+    const info = $('hintLegend');
+    info.hidden = !threatsOn || Boolean(review) || !state || state.ended;
+    if (info.hidden) return;
+    info.textContent = 'Ищем захваты…';
+    const game = state;
+    const { n, owners, live, turn } = game;
+    const found = new Uint8Array(owners.length);
+    let index = 0;
+
+    // Добавленная стенка замыкает контур только при наличии двух соседей цвета.
+    function scan() {
+      if (threatJob !== job) return;
+      const end = performance.now() + 9;
+      for (; index < owners.length && performance.now() < end; index++) {
+        if (owners[index]) continue;
+        const [x, y] = coord(game, index);
+        const adjacent = [0, 0, 0];
+        for (let yy = Math.max(0, y - 1); yy <= Math.min(n - 1, y + 1); yy++) {
+          for (let xx = Math.max(0, x - 1); xx <= Math.min(n - 1, x + 1); xx++) adjacent[live[yy * n + xx]]++;
+        }
+        for (const color of [turn, other(turn)]) {
+          const id = ids[color];
+          if (adjacent[id] < 2) continue;
+          const position = owners.slice();
+          position[index] = id;
+          const after = resolveCaptures(position, n, live, index);
+          if (after.some((value, i) => !value && live[i] === 3 - id)) found[index] |= color === turn ? 1 : 2;
+        }
+      }
+      if (index < owners.length) return void setTimeout(scan, 0);
+      threats = found;
+      info.textContent = found.some(Boolean) ? 'Круг — захват · квадрат — блок' : 'Немедленных захватов нет';
+      queueDraw();
+    }
+    setTimeout(scan, 0);
+  }
+
+  function paintTerritories(ctx, colors, view, minX, maxX, minY, maxY, X, Y) {
+    const { n } = state;
+    masks ??= [Rules.enclosed(view.live, n, 1), Rules.enclosed(view.live, n, 2)];
+    for (const [wall, mask] of masks.entries()) {
+      ctx.fillStyle = ctx.strokeStyle = colors[wall + 1];
+      ctx.lineWidth = Math.min(1.4, cell * .17);
+      ctx.beginPath();
+      for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+          const i = y * n + x;
+          if (!mask[i]) continue;
+          const l = X(x) - cell / 2, t = Y(y) - cell / 2, r = l + cell, b = t + cell;
+          ctx.globalAlpha = .13;
+          ctx.fillRect(l, t, cell, cell);
+          if (x === 0 || !mask[i - 1]) { ctx.moveTo(l, b); ctx.lineTo(l, t); }
+          if (x === n - 1 || !mask[i + 1]) { ctx.moveTo(r, t); ctx.lineTo(r, b); }
+          if (!mask[i - n]) { ctx.moveTo(l, t); ctx.lineTo(r, t); }
+          if (!mask[i + n]) { ctx.moveTo(r, b); ctx.lineTo(l, b); }
+        }
+      }
+      ctx.globalAlpha = .7;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function captureAreas(captured) {
+    if (!captured.length || !motionOn || reduceMotion.matches || review) return null;
+    const { owners, live, n } = state;
+    const colors = new Uint8Array(owners.length);
+    for (const wall of [1, 2]) {
+      const queue = captured.filter((i) => owners[i] === 3 - wall);
+      if (!queue.length) continue;
+      const mask = Rules.enclosed(live, n, wall);
+      const include = (i) => {
+        if (!mask[i]) return;
+        mask[i] = 0;
+        colors[i] = wall;
+        queue.push(i);
+      };
+      for (const i of queue) {
+        mask[i] = 0;
+        colors[i] = wall;
+        if (i % n > 0) include(i - 1);
+        if (i % n < n - 1) include(i + 1);
+        if (i >= n) include(i - n);
+        if (i < owners.length - n) include(i + n);
+      }
+    }
+    return colors;
+  }
+
+  function draw(now) {
+    frameRequest = 0;
+    const board = surface(canvas);
+    if (!board || !state) return;
+    const { ctx, width, height } = board;
+    const view = liveView();
+    const { n } = state;
+    const [left, top] = origin();
+    const X = (x) => left + x * cell;
+    const Y = (y) => top + y * cell;
+    const minX = Math.max(0, Math.floor(-left / cell) - 1);
+    const minY = Math.max(0, Math.floor(-top / cell) - 1);
+    const maxX = Math.min(n - 1, Math.ceil((width - left) / cell) + 1);
+    const maxY = Math.min(n - 1, Math.ceil((height - top) / cell) + 1);
+    const colors = palette ??= readPalette();
+    const anim = !review && motionOn && !reduceMotion.matches && animation && now - animation.from < 520 ? animation : null;
+    if (!anim) animation = null;
+    const age = anim ? clamp((now - anim.from) / 520, 0, 1) : 1;
+
+    ctx.lineWidth = cell < 5 ? .45 : 1;
+    ctx.strokeStyle = colors[0];
+    ctx.beginPath();
+    for (let x = minX; x <= maxX; x++) { ctx.moveTo(X(x), Y(0)); ctx.lineTo(X(x), Y(n - 1)); }
+    for (let y = minY; y <= maxY; y++) { ctx.moveTo(X(0), Y(y)); ctx.lineTo(X(n - 1), Y(y)); }
+    ctx.stroke();
+    if (n === 1) {
+      ctx.fillStyle = colors[3];
+      ctx.fillRect(X(0) - 1, Y(0) - 1, 2, 2);
+    }
+
+    if (territoryOn) paintTerritories(ctx, colors, view, minX, maxX, minY, maxY, X, Y);
+
+    if (anim?.areas) {
+      ctx.globalAlpha = .38 * (1 - age);
+      for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+          const wall = anim.areas[y * n + x];
+          if (!wall) continue;
+          ctx.fillStyle = colors[wall];
+          ctx.fillRect(X(x) - cell / 2, Y(y) - cell / 2, cell, cell);
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    for (const wall of [1, 2]) {
+      ctx.strokeStyle = colors[wall];
+      ctx.lineWidth = Math.max(.7, Math.min(4, cell * .105));
+      ctx.beginPath();
+      for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+          const i = y * n + x;
+          if (view.live[i] !== wall) continue;
+          for (const [dx, dy] of [[1, 0], [-1, 1], [0, 1], [1, 1]]) {
+            if (x + dx < 0 || x + dx >= n || view.live[i + dx + dy * n] !== wall) continue;
+            ctx.moveTo(X(x), Y(y));
+            ctx.lineTo(X(x + dx), Y(y + dy));
+          }
+        }
+      }
+      ctx.stroke();
+    }
+
+    const radius = Math.min(16, Math.max(.45, cell * .255));
+    const circle = (x, y, r) => {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+    };
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        const i = y * n + x;
+        const owner = view.owners[i];
+        const px = X(x), py = Y(y);
+        if (owner) {
+          const alive = view.live[i];
+          const grow = i === anim?.step.index ? .45 + .55 * Math.min(1, age * 4) : 1;
+          ctx.fillStyle = ctx.strokeStyle = colors[owner];
+          circle(px, py, radius * grow);
+          if (alive) ctx.fill();
+          else {
+            const r = radius * .56;
+            ctx.lineWidth = Math.max(.65, radius * .22);
+            ctx.moveTo(px - r, py - r); ctx.lineTo(px + r, py + r);
+            ctx.moveTo(px + r, py - r); ctx.lineTo(px - r, py + r);
+            ctx.stroke();
+          }
+        } else if (threats?.[i] && !review) {
+          const r = cell * .31;
+          ctx.lineWidth = Math.max(.8, cell * .08);
+          if (threats[i] & 1) {
+            ctx.strokeStyle = colors[4];
+            circle(px, py, Math.max(1, r));
+            ctx.stroke();
+          }
+          if (threats[i] & 2) {
+            ctx.strokeStyle = colors[ids[other(state.turn)]];
+            ctx.strokeRect(px - r, py - r, 2 * r, 2 * r);
+          }
+        }
+      }
+    }
+
+    if (view.last) {
+      ctx.strokeStyle = colors[5];
+      ctx.lineWidth = Math.max(.75, Math.min(1.6, cell * .13));
+      circle(X(view.last[0]), Y(view.last[1]), radius + Math.max(1, cell * .11));
+      ctx.stroke();
+    }
+    if (hover) {
+      const [x, y] = hover;
+      const r = Math.max(2, cell * .43);
+      ctx.strokeStyle = colors[free(state, x, y) && canPlace() ? 4 : 3];
+      ctx.lineWidth = Math.max(1, Math.min(2, cell * .11));
+      ctx.strokeRect(X(x) - r, Y(y) - r, 2 * r, 2 * r);
+    }
+    if (anim) queueDraw();
+  }
+
+  let chartsRequest = 0;
+  function queueCharts() {
+    if (!chartsRequest) chartsRequest = requestAnimationFrame(() => {
+      chartsRequest = 0;
+      if (!$('charts').open) return;
+      const scores = state.frames.map((step) => step ? step.stats.score.red - step.stats.score.blue : 0);
+      const times = state.frames.map((step) => step?.elapsed ?? null);
+      chart('scoresChart', scores, (palette ??= readPalette())[4]);
+      chart('timesChart', times, palette[2]);
+    });
+  }
+
+  function chart(id, values, color) {
+    const board = surface($(id));
+    if (!board) return;
+    const { ctx, width, height } = board;
+    const min = Math.min(0, ...values);
+    const max = Math.max(1, ...values);
+    const X = (i) => 36 + i / Math.max(1, values.length - 1) * (width - 45);
+    const Y = (v) => height - 10 - (v - min) / (max - min) * (height - 22);
+    ctx.fillStyle = ctx.strokeStyle = palette[3];
+    ctx.font = '11px sans-serif';
+    ctx.fillText(String(Math.round(max)), 1, Y(max) + 3);
+    if (min < 0) ctx.fillText(String(min), 1, Y(min) + 3);
+    ctx.beginPath();
+    ctx.moveTo(X(0), Y(0));
+    ctx.lineTo(width, Y(0));
+    ctx.stroke();
+    ctx.strokeStyle = ctx.fillStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    let started = false;
+    values.forEach((v, i) => {
+      if (v === null) return;
+      if (started) ctx.lineTo(X(i), Y(v));
+      else ctx.moveTo(X(i), Y(v));
+      started = true;
+    });
+    ctx.stroke();
+    if (values.filter((v) => v !== null).length === 1) {
+      const i = values.findIndex((v) => v !== null);
+      ctx.fillRect(X(i) - 2, Y(values[i]) - 2, 4, 4);
+    }
+  }
+
+  function stopPlayback() {
+    if (playback) clearTimeout(playback);
+    playback = null;
+  }
+
+  function inspect(index) {
+    review = positionAt(clamp(index, 0, state.frames.length - 1), review);
+    hover = null;
+    if (review.last) reveal(review.last);
+    invalidate();
+    render();
+  }
+
+  function visit(index) {
+    stopPlayback();
+    inspect(index);
+  }
+
+  function startPlayback() {
+    if (playback) {
+      stopPlayback();
+      render();
+      return;
+    }
     const end = state.frames.length - 1;
-    const start = review && review.index < end ? review.index : 0;
-    playback = setInterval(() => {
+    if (!end) return;
+    const tick = () => {
       const next = review.index + 1;
       if (next >= end) stopPlayback();
+      else playback = setTimeout(tick, 700 / Number($('speed').value));
       inspect(next);
-    }, 650);
-    inspect(start);
-  });
-  $('resume').addEventListener('click', () => {
-    stopPlayback(); review = null; $('play').focus(); render();
-    if (state.last) revealCell(...state.last);
-  });
-  $('undo').addEventListener('click', () => {
-    if (state.busy || state.frames.length < 2) return;
-    stopPlayback();
-    const target = state.frames.length - 2;
-    const frame = state.frames[target];
-    const position = positionAt(target);
-    state.frames.length = target + 1;
-    state.owners = position.owners;
-    state.live = position.live;
-    state.moveNo = frame.moveNo;
-    state.turn = frame.turn;
-    state.last = frame.last;
-    state.placed = position.owners.reduce((count, owner) => count + Number(owner !== 0), 0);
-    state.misses = 0;
-    state.ended = false;
-    state.result = '';
-    review = null;
-    $('log').replaceChildren();
-    for (let i = 1; i < state.frames.length; i++) {
-      const step = state.frames[i];
-      log(step.label, step.label.includes('Пропуск') ? 'error' : 'info', undefined, i);
+    };
+    playback = setTimeout(tick, 700 / Number($('speed').value));
+    inspect(review && review.index < end ? review.index : 0);
+  }
+
+  function serialise(game) {
+    const { n, mode, human, address, timeout, chance, end } = game;
+    const steps = game.frames.slice(1).map(({ index, elapsed, spent, error, random }) => ({
+      point: index < 0 ? null : coord(game, index), elapsed, spent, error, random,
+    }));
+    return { version: 1, settings: { n, mode, human, address, timeout, chance }, steps, end };
+  }
+
+  function httpAddress(text) {
+    let url;
+    try { url = new URL(text); } catch { throw new Error('Укажите HTTP(S)-адрес бота.'); }
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+      throw new Error('Укажите HTTP(S)-адрес бота без пароля, параметров или фрагмента.');
     }
-    render();
-    if (state.mode === 'http' && state.turn !== state.human) void botMove();
-  });
-  $('retry').addEventListener('click', () => void botMove());
-  $('territory').addEventListener('click', () => {
-    showTerritory = !showTerritory;
-    $('territory').setAttribute('aria-pressed', String(showTerritory));
-    queueDraw();
-  });
-  function fitBoard() {
-    const viewport = $('viewport');
-    cell = Math.max(2, Math.min(40, Math.floor((Math.min(viewport.clientWidth, viewport.clientHeight) - 2) / (state.n + 1))));
-    $('zoom').value = cell;
-    $('zoomValue').textContent = `${cell} px`;
-    queueDraw();
+    return url.href.replace(/\/+$/, '');
   }
-  $('fit').addEventListener('click', () => { fitted = true; fitBoard(); });
-  $('zoom').addEventListener('input', () => {
+
+  async function parseReplay(data) {
+    const { settings: options, steps, end } = data ?? {};
+    const invalid = () => { throw new Error('Некорректный файл записи партии.'); };
+    if (data?.version !== 1 || !options || !Array.isArray(steps)) invalid();
+    const { n, mode, human, address, timeout, chance } = options;
+    if (!Number.isInteger(n) || n < 1 || n > 150 || !['local', 'http', 'random'].includes(mode)
+      || !['red', 'blue'].includes(human) || ![500, 1500, 5000].includes(timeout)
+      || !Number.isInteger(chance) || chance < 0 || chance > 100
+      || steps.length > 2 * n * n + MAX_MISSES) invalid();
+    const game = makeGame({ n, mode, human, address: httpAddress(address), timeout, chance });
+    for (const [i, step] of steps.entries()) {
+      if (!step || game.ended) invalid();
+      const { point, elapsed, spent, error, random } = step;
+      const bot = botTurn(game);
+      if (typeof error !== 'string' || error.length > 250 || typeof random !== 'boolean'
+        || !Number.isFinite(spent) || spent < 0
+        || (bot ? !Number.isFinite(elapsed) || elapsed < 0 : elapsed !== null || spent !== 0)
+        || (random && !bot) || (point === null && (!bot || mode !== 'http' || !error))) invalid();
+      if (point !== null && (!Array.isArray(point) || point.length !== 2 || !free(game, ...point) || error)) invalid();
+      advance(game, { index: point === null ? -1 : point[1] * n + point[0], elapsed, spent, error, random });
+      if (i % 40 === 39) await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    if (game.ended) {
+      if (end?.reason !== game.end.reason || end?.winner !== game.end.winner) invalid();
+    } else if (end !== undefined) {
+      const winner = other(mode === 'local' ? game.turn : human);
+      if (end?.reason !== 'Сдача' || end?.winner !== winner) invalid();
+      finish(game, 'Сдача', winner);
+    }
+    game.imported = true;
+    return game;
+  }
+
+  function announce(id, message) {
+    $(id).textContent = message;
+    $(id).hidden = !message;
+  }
+
+  function syncSettings() {
+    const mode = $('mode').value;
+    const customBot = mode === 'http';
+    const projectBot = mode === 'project';
+    const custom = $('size').value === 'custom';
+    $('httpFields').hidden = !customBot && !projectBot;
+    $('addressField').hidden = $('address').disabled = !customBot;
+    $('tokenField').hidden = !customBot;
+    $('chanceField').hidden = $('chance').disabled = !customBot;
+    $('projectBotHelp').hidden = $('projectTokenField').hidden = !projectBot;
+    $('humanField').hidden = mode === 'local';
+    $('customField').hidden = $('customSize').disabled = !custom;
+  }
+
+  function botConnection(mode) {
+    if (mode === 'project') return { address: PROJECT_BOT_ADDRESS, token: $('projectToken').value.trim() };
+    if (mode === 'http') return { address: httpAddress($('address').value), token: $('token').value.trim() };
+    return {};
+  }
+
+  function cycleTheme() {
+    theme = (theme + 1) % 3;
+    const css = ['', 'light', 'dark'][theme];
+    document.documentElement.dataset.theme = css;
+    $('theme').textContent = `Тема: ${['авто', 'светлая', 'тёмная'][theme]}`;
+    palette = null;
+    queueDraw();
+    queueCharts();
+  }
+
+  function shift(dx, dy) {
     fitted = false;
-    cell = Number($('zoom').value);
-    $('zoomValue').textContent = `${cell} px`;
+    pan = [pan[0] + dx, pan[1] + dy];
+    boundPan();
     queueDraw();
-  });
-  new ResizeObserver(() => { if (fitted) fitBoard(); else queueDraw(); }).observe($('viewport'));
-  function tick(now) {
-    if (state?.busy && now - lastClockPaint > 200) { paintClock(); lastClockPaint = now; }
-    requestAnimationFrame(tick);
   }
-  requestAnimationFrame(tick);
-  syncSettings();
-  $('settings').requestSubmit();
+
+  function revealBoardOnMobile() {
+    if (matchMedia('(max-width: 830px)').matches) canvas.closest('.board-card').scrollIntoView({ block: 'start' });
+  }
+
+  function setupPointers() {
+    const pointers = new Map();
+    let gesture = false;
+    let suppressClick = false;
+    const location = (event) => {
+      const bounds = canvas.getBoundingClientRect();
+      return [event.clientX - bounds.left, event.clientY - bounds.top];
+    };
+    const middle = ([a, b]) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const distance = ([a, b]) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+
+    canvas.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0 && event.button !== 1) return;
+      const pt = location(event);
+      if (!pointers.size) {
+        gesture = event.button === 1;
+        suppressClick = false;
+      } else gesture = true;
+      pointers.set(event.pointerId, { start: pt, point: pt });
+      canvas.setPointerCapture(event.pointerId);
+    });
+    canvas.addEventListener('pointermove', (event) => {
+      const finger = pointers.get(event.pointerId);
+      if (!finger) {
+        if (event.pointerType === 'mouse') {
+          const next = pointAt(event);
+          if (next?.[0] !== hover?.[0] || next?.[1] !== hover?.[1]) { hover = next; queueDraw(); }
+        }
+        return;
+      }
+      const prior = [...pointers.values()].slice(0, 2).map((item) => item.point);
+      const old = finger.point;
+      finger.point = location(event);
+      if (pointers.size > 1) {
+        const points = [...pointers.values()].slice(0, 2).map((item) => item.point);
+        zoomTo(cell * Math.max(1, distance(points)) / Math.max(1, distance(prior)), middle(prior), middle(points));
+      } else {
+        const [x, y] = finger.point;
+        if (!gesture && Math.hypot(x - finger.start[0], y - finger.start[1]) >= 5) {
+          gesture = true;
+          shift(x - finger.start[0], y - finger.start[1]);
+        } else if (gesture) shift(x - old[0], y - old[1]);
+      }
+      if (gesture) {
+        hover = null;
+        canvas.classList.add('dragging');
+      }
+    });
+    const done = (event) => {
+      if (!pointers.delete(event.pointerId)) return;
+      suppressClick = gesture || event.type !== 'pointerup' || pointers.size > 0;
+      if (!pointers.size) canvas.classList.remove('dragging');
+    };
+    canvas.addEventListener('pointerup', done);
+    canvas.addEventListener('pointercancel', done);
+    canvas.addEventListener('lostpointercapture', done);
+    canvas.addEventListener('click', (event) => {
+      if (!suppressClick) playAt(pointAt(event));
+      suppressClick = false;
+    });
+    canvas.addEventListener('pointerleave', () => { hover = null; queueDraw(); });
+    canvas.addEventListener('wheel', (event) => {
+      event.preventDefault();
+      const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 100 : 1);
+      zoomTo(cell * Math.exp(-clamp(delta, -160, 160) * .004), location(event));
+    }, { passive: false });
+  }
+
+  function bindControls() {
+    const on = (node, event, handler) => $(node).addEventListener(event, handler);
+    const click = (node, handler) => on(node, 'click', handler);
+    const directions = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+
+    on('settings', 'submit', (event) => {
+      event.preventDefault();
+      announce('settingsNotice', '');
+      const mode = $('mode').value;
+      const n = Number($('size').value === 'custom' ? $('customSize').value : $('size').value);
+      let connection;
+      try { connection = botConnection(mode); }
+      catch (error) { announce('settingsNotice', error.message); return; }
+      if (!state.ended && !state.imported && state.frames.length > 1 && !confirm('Начать новую партию?')) return;
+      startGame({
+        n, mode: mode === 'project' ? 'http' : mode, ...connection, human: $('human').value,
+        timeout: Number($('timeout').value), chance: mode === 'http' ? Number($('chance').value) : 0,
+      });
+      revealBoardOnMobile();
+      announce('fileStatus', '');
+    });
+
+    let healthRequest;
+    function clearHealth() {
+      healthRequest?.abort();
+      healthRequest = null;
+      $('health').disabled = false;
+      announce('healthStatus', '');
+    }
+    on('mode', 'change', () => { syncSettings(); clearHealth(); });
+    for (const id of ['address', 'token', 'projectToken']) on(id, 'input', clearHealth);
+    on('size', 'change', syncSettings);
+    click('health', async () => {
+      const button = $('health');
+      const controller = new AbortController();
+      healthRequest = controller;
+      const timer = setTimeout(() => controller.abort(), 5000);
+      button.disabled = true;
+      announce('healthStatus', 'Проверяем…');
+      try {
+        const { address, token } = botConnection($('mode').value);
+        const data = await responseJson(await fetch(`${address}/v1/health`, {
+          headers: headers(token), signal: controller.signal,
+        }));
+        if (healthRequest !== controller) return;
+        if (data?.status !== 'ok') throw new Error('Неожиданный ответ проверки.');
+        announce('healthStatus', 'Бот доступен.');
+      } catch (error) {
+        if (healthRequest !== controller) return;
+        const message = controller.signal.aborted ? 'Истёк таймаут'
+          : error instanceof TypeError ? 'сервер недоступен или запрос заблокирован браузером' : error.message;
+        announce('healthStatus', `Ошибка проверки · ${message}`);
+      } finally {
+        clearTimeout(timer);
+        if (healthRequest === controller) {
+          healthRequest = null;
+          button.disabled = false;
+        }
+      }
+    });
+
+    click('undo', undo);
+    click('demo', () => {
+      if (!state.ended && !state.imported && state.frames.length > 1 && !confirm('Открыть пример вместо текущей партии?')) return;
+      startGame({ n: 9, mode: 'local' });
+      for (const [x, y] of [[4, 3], [4, 4], [3, 4], [1, 2], [4, 5], [6, 6], [5, 4]]) {
+        advance(state, { index: y * state.n + x });
+      }
+      state.imported = true;
+      rebuildJournal();
+      inspect(state.frames.length - 1);
+      revealBoardOnMobile();
+    });
+    click('retry', retry);
+    click('resign', resign);
+    click('showBoard', () => { resultDismissed = true; render(); });
+    click('theme', cycleTheme);
+    click('keys', () => $('keyHelp').showModal());
+    click('motion', () => {
+      motionOn = !motionOn;
+      $('motion').setAttribute('aria-pressed', String(motionOn));
+      document.documentElement.dataset.motion = motionOn ? 'on' : 'off';
+      if (!motionOn) for (const color of ['red', 'blue']) $(`${color}Score`).getAnimations().forEach((anim) => anim.cancel());
+      queueDraw();
+    });
+    click('territory', () => {
+      territoryOn = !territoryOn;
+      $('territory').setAttribute('aria-pressed', String(territoryOn));
+      queueDraw();
+    });
+    click('threats', () => {
+      threatsOn = !threatsOn;
+      $('threats').setAttribute('aria-pressed', String(threatsOn));
+      scheduleThreats();
+      queueDraw();
+    });
+    click('fit', fitBoard);
+    click('zoomIn', () => zoomBy(1.24));
+    click('zoomOut', () => zoomBy(1 / 1.24));
+    on('zoom', 'input', () => zoomBy(Number($('zoom').value) / cell));
+
+    on('history', 'input', () => visit(Number($('history').value)));
+    click('previous', () => visit((review?.index ?? state.frames.length - 1) - 1));
+    click('next', () => visit((review?.index ?? state.frames.length - 1) + 1));
+    click('play', startPlayback);
+    click('resume', () => {
+      stopPlayback();
+      review = hover = null;
+      invalidate();
+      render();
+      if (state.last) reveal(state.last);
+    });
+    click('journal', (event) => {
+      const item = event.target.closest('[data-frame]');
+      if (item) visit(Number(item.dataset.frame));
+    });
+    on('charts', 'toggle', queueCharts);
+
+    click('download', () => {
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(new Blob([JSON.stringify(serialise(state))], { type: 'application/json' }));
+      link.href = url;
+      link.download = 'dots-game.json';
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    click('upload', () => $('file').click());
+    let importNumber = 0;
+    on('file', 'change', async () => {
+      const file = $('file').files[0];
+      $('file').value = '';
+      if (!file) return;
+      const current = ++importNumber;
+      const previous = state;
+      try {
+        if (file.size > 16 * 1024 * 1024) throw new Error('Файл больше 16 МБ.');
+        announce('fileStatus', 'Загружаем запись…');
+        const game = await parseReplay(JSON.parse(await file.text()));
+        if (current !== importNumber || state !== previous) return;
+        if (!state.ended && !state.imported && state.frames.length > 1 && !confirm('Открыть запись вместо текущей партии?')) {
+          announce('fileStatus', '');
+          return;
+        }
+        pending?.abort();
+        pending = animation = review = null;
+        stopPlayback();
+        state = game;
+        rebuildJournal();
+        fitBoard();
+        inspect(0);
+        revealBoardOnMobile();
+        announce('fileStatus', `Запись открыта · ходов: ${state.frames.length - 1}`);
+      } catch (error) {
+        if (current !== importNumber) return;
+        announce('fileStatus', error.name === 'SyntaxError' ? 'Не удалось прочитать JSON.' : error.message);
+      }
+    });
+
+    setupPointers();
+    canvas.addEventListener('focus', () => {
+      if (!canvas.matches(':focus-visible')) return;
+      hover = liveView().last ?? [state.n >> 1, state.n >> 1];
+      reveal(hover);
+      queueDraw();
+    });
+    canvas.addEventListener('blur', () => { hover = null; queueDraw(); });
+    canvas.addEventListener('keydown', (event) => {
+      const move = directions[event.key];
+      if (!move && event.key !== 'Enter') return;
+      event.preventDefault();
+      if (event.key === 'Enter') { playAt(hover); return; }
+      hover ??= liveView().last ?? [state.n >> 1, state.n >> 1];
+      hover = hover.map((v, axis) => clamp(v + move[axis], 0, state.n - 1));
+      reveal(hover);
+      queueDraw();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey
+        || $('keyHelp').open || event.target.closest('input, select, textarea, [contenteditable]')) return;
+      if (event.key === ' ' && event.target.closest('button, summary')) return;
+      const move = directions[event.key];
+      if (move) {
+        event.preventDefault();
+        shift(-move[0] * Math.max(32, cell), -move[1] * Math.max(32, cell));
+        return;
+      }
+      const commands = {
+        z: undo, n: () => $('settings').requestSubmit(), h: () => $('threats').click(), t: cycleTheme,
+        '+': () => zoomBy(1.24), '=': () => zoomBy(1.24),
+        '-': () => zoomBy(1 / 1.24), '−': () => zoomBy(1 / 1.24),
+        '?': () => $('keyHelp').showModal(), ' ': startPlayback,
+      };
+      const command = commands[event.key.toLowerCase()];
+      if (!command) return;
+      event.preventDefault();
+      command();
+    });
+
+    new ResizeObserver(() => {
+      if (fitted) fitBoard();
+      else { boundPan(); queueDraw(); }
+      queueCharts();
+    }).observe(canvas);
+    window.addEventListener('resize', () => { queueDraw(); queueCharts(); });
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      palette = null;
+      queueDraw();
+      queueCharts();
+    });
+    reduceMotion.addEventListener('change', () => { animation = null; queueDraw(); });
+  }
+
+  if (document.documentElement) {
+    $('mark').src = document.querySelector('link[rel="icon"]').href;
+    bindControls();
+    syncSettings();
+    startGame({ n: 20, mode: 'local' });
+    console.table(Rules.checks());
+  } else {
+    canvas.addEventListener('click', (event) => playAt(pointAt(event)));
+  }
 </script>
 </body>
 </html>
