@@ -57,6 +57,41 @@ docker compose logs --tail=100 -f dots-bot
 
 ## Обновление и откат
 
+### Автодеплой из main
+
+Workflow `.github/workflows/deploy.yml` запускает полный `npm test` на Ubuntu с Node.js 20 и только после успешных тестов выкладывает точный проверенный коммит `main`. Подключение: SSH под `root`, папка `/root/dots-bot`, стандартный порт 22. Push в другие ветки не запускает деплой. Для включения workflow должен быть слит в `main`.
+
+Однократная подготовка на сервере (если есть локальные изменения, сначала разберите их; `.env` сохраните):
+
+```sh
+cd /root/dots-bot
+git status --short
+git fetch origin main
+git switch main
+git pull --ff-only origin main
+test -f .env
+docker compose version
+curl --version
+```
+
+Создайте отдельную пару SSH-ключей на доверенном компьютере: `ssh-keygen -t ed25519 -C github-actions-dots-deploy -f github_actions_dots` (без passphrase для автоматизации). Добавьте содержимое `github_actions_dots.pub` отдельной строкой в `/root/.ssh/authorized_keys` на сервере, не заменяя существующие ключи. Права: `chmod 700 /root/.ssh` и `chmod 600 /root/.ssh/authorized_keys`. Приватный ключ не коммитьте.
+
+В GitHub → Settings → Secrets and variables → Actions добавьте repository secrets:
+
+| Имя | Значение |
+|---|---|
+| `DEPLOY_HOST` | IP или SSH-имя сервера, без `root@`, схемы и порта |
+| `DEPLOY_SSH_KEY` | Полное содержимое приватного `github_actions_dots` |
+| `DEPLOY_KNOWN_HOSTS` | Проверенная запись ключа SSH-хоста сервера |
+
+Получите запись с доверенного компьютера командой `ssh-keyscan -t ed25519 АДРЕС_СЕРВЕРА > known_hosts`. Сверьте её отпечаток (`ssh-keygen -lf known_hosts`) с `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` через доверенную консоль сервера, затем сохраните содержимое `known_hosts` в secret. Для нестандартного порта добавьте `-p ПОРТ` в `ssh-keyscan` и repository variable `DEPLOY_PORT`. По умолчанию workflow использует 22.
+
+Сервер также должен иметь доступ к `git fetch origin main`. Для публичного репозитория достаточно HTTPS origin. Для приватного настройте отдельный read-only deploy key для подключения сервера к GitHub. Это не тот ключ, которым Actions подключается к серверу.
+
+`.env`, `BOT_TOKEN` и `DASHBOARD_TOKEN` остаются на сервере, workflow их не выводит. Рабочее дерево серверного клона должно быть чистым, текущая ветка — `main`: при расхождении деплой останавливается без принудительного сброса. Запуски выполняются последовательно; устаревший коммит не выкладывается. Пересоздание контейнера сбрасывает историю панели и кэш партий, поэтому слияния в `main` планируйте между играми.
+
+После слияния откройте GitHub → Actions → «Проверка и деплой main». Повторный запуск доступен через Run workflow для `main`. Ошибка HTTP-проверки делает job красной, автоматического отката нет; используйте инструкцию отката ниже. Если права SSH-ключа больше не нужны, удалите его публичную строку из `authorized_keys` и соответствующий secret.
+
 - **Новый код:** запустите `npm test` из исходников или `docker compose run --rm --no-deps dots-bot npm test` после сборки образа с новым кодом. Для выкладки выполните `docker compose up -d --build`, затем проверьте `/v1/health` и версию в `/v1/info`.
 - **Изменение `.env`:** выполните `docker compose up -d --force-recreate dots-bot`. Обычный `restart` не подхватит новые переменные окружения.
 - **Откат:** подготовьте отдельную копию известных рабочих исходников (например, сохранённый релиз или отдельный worktree). Перенесите в неё настройки без публикации `.env`. Остановите текущий сервис через `docker compose stop dots-bot`, чтобы освободить порт, и выполните `docker compose up -d --build` из рабочей копии. Проверьте версию и доступность по публичному адресу.
