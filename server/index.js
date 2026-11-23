@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { BOT_VERSION } from '../bot/index.js';
 import { computeMove } from './compute-move.js';
 import { createDashboard, serveDashboardFile } from './dashboard.js';
+import { createGameLogs } from './game-logs.js';
 
 const PORT = Number(process.env.PORT || 4003);
 const BODY_LIMIT_BYTES = 8 * 1024 * 1024;
@@ -174,6 +175,7 @@ export function createBotServer({
   dashboardToken = process.env.DASHBOARD_TOKEN,
   serveDashboard = process.env.SERVE_DASHBOARD !== '0',
   dashboard = createDashboard(),
+  gameLogs = createGameLogs({ directory: process.env.GAME_LOG_DIR, botVersion: BOT_VERSION }),
 } = {}) {
   const games = new Map();
   const fallbackResponses = new WeakSet();
@@ -182,7 +184,7 @@ export function createBotServer({
     const rawPath = (req.url || '/').split('?', 1)[0];
     if (!rawPath.startsWith('/v1/')) {
       if (req.method === 'GET' && rawPath === '/api/status') {
-        sendJson(res, 200, dashboard.status(BOT_VERSION));
+        sendJson(res, 200, { ...dashboard.status(BOT_VERSION), gameLogs: gameLogs.status() });
         return;
       }
       if (req.method === 'GET' && (rawPath === '/api/recent-moves' || rawPath === '/api/games' || rawPath.startsWith('/api/games/'))) {
@@ -263,6 +265,11 @@ export function createBotServer({
         setImmediate(() => {
           try {
             dashboard.record({ request: position, mode, move: playedMove, fallback, receivedAt, durationMs, status });
+          } catch {
+            dashboard.recordError();
+          }
+          try {
+            gameLogs.record({ request: position, mode, move: playedMove, fallback, receivedAt, durationMs, status });
           } catch {
             dashboard.recordError();
           }
