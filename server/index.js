@@ -8,7 +8,9 @@ import { createDashboard, serveDashboardFile } from './dashboard.js';
 
 const PORT = Number(process.env.PORT || 4003);
 const BODY_LIMIT_BYTES = 8 * 1024 * 1024;
-const MOVE_CACHE_IDLE_MS = 60 * 60 * 1000;
+// После паузы клиент мог начать новую партию с прежним gameId.
+// Сбрасываем только кэш ходов; следующая позиция полностью задаётся запросом.
+const MOVE_CACHE_IDLE_MS = 10 * 1000;
 const MAX_CACHED_GAMES = 128;
 
 function sendJson(res, statusCode, data) {
