@@ -119,7 +119,7 @@ test('метрики открыты, а список и отдельная па�
     assert.equal(stats.lastRequestAt, null);
     assert.equal(stats.games, undefined);
   }
-  for (const path of ['/api/games', '/api/games/any']) {
+  for (const path of ['/api/games', '/api/games/any', '/api/recent-moves']) {
     const forbidden = await gamesApi(closed, path);
     assert.equal(forbidden.status, 403);
     assert.match((await forbidden.json()).error.message, /задайте DASHBOARD_TOKEN/i);
@@ -130,6 +130,24 @@ test('метрики открыты, а список и отдельная па�
   }
   assert.deepEqual(await jsonOk(await gamesApi(configured)), []);
   assert.equal((await gamesApi(configured, '/api/games/any')).status, 404);
+});
+
+test('лента содержит 10 последних успешных ходов по всем партиям без дублей повторных запросов', async (t) => {
+  const port = await start(t, { dashboardToken: TOKEN });
+  const route = '/api/recent-moves';
+  assert.deepEqual(await jsonOk(await gamesApi(port, route)), []);
+  for (let moveNo = 1; moveNo <= 11; moveNo++) {
+    await jsonOk(await move(port, { gameId: `recent-${moveNo % 2}`, moveNo }));
+  }
+  const reply = await jsonOk(await move(port, { gameId: 'recent-0', moveNo: 10 }));
+  const rejected = await move(port, { gameId: 'recent-0', moveNo: 12 }, { 'Content-Type': 'text/plain' });
+  assert.equal(rejected.status, 415);
+  const recent = await jsonOk(await gamesApi(port, route));
+  assert.deepEqual(recent.map((entry) => entry.moveNo), [10, 11, 9, 8, 7, 6, 5, 4, 3, 2]);
+  assert.equal(recent[0].gameId, 'recent-0');
+  assert.equal(recent[1].gameId, 'recent-1');
+  assert.deepEqual(recent[0].last, position.last);
+  assert.deepEqual(recent[0].move, reply);
 });
 
 test('история хранит ходы, режим и последний снимок, а метрики учитывают ошибки', async (t) => {

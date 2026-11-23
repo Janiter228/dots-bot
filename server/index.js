@@ -2,7 +2,8 @@ import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chooseMove, BOT_VERSION } from '../bot/index.js';
+import { BOT_VERSION } from '../bot/index.js';
+import { computeMove } from './compute-move.js';
 import { createDashboard, serveDashboardFile } from './dashboard.js';
 
 const PORT = Number(process.env.PORT || 4003);
@@ -182,7 +183,7 @@ export function createBotServer({
         sendJson(res, 200, dashboard.status(BOT_VERSION));
         return;
       }
-      if (req.method === 'GET' && (rawPath === '/api/games' || rawPath.startsWith('/api/games/'))) {
+      if (req.method === 'GET' && (rawPath === '/api/recent-moves' || rawPath === '/api/games' || rawPath.startsWith('/api/games/'))) {
         if (!expectedAuthorization) {
           sendError(res, 403, 'forbidden', 'Чтобы открыть партии, задайте DASHBOARD_TOKEN на сервере');
           return;
@@ -194,6 +195,10 @@ export function createBotServer({
         }
         if (rawPath === '/api/games') {
           sendJson(res, 200, dashboard.list());
+          return;
+        }
+        if (rawPath === '/api/recent-moves') {
+          sendJson(res, 200, dashboard.recent());
           return;
         }
         const id = rawPath.slice('/api/games/'.length);
@@ -320,9 +325,14 @@ export function createBotServer({
         return;
       }
 
+      const cancellation = new AbortController();
+      const cancel = () => cancellation.abort(new Error('Клиент отменил запрос хода'));
+      res.once('close', cancel);
+      if (res.destroyed) cancel();
       let move;
       try {
-        move = chooseMove(request);
+        move = await computeMove(request, cancellation.signal);
+        if (cancellation.signal.aborted) return;
         // Не позволяем ошибке алгоритма превратиться в пропуск хода.
         // Если стратегия вернула некорректную клетку, выбираем любую свободную.
         if (!isLegalMove(move, request)) {
@@ -331,6 +341,7 @@ export function createBotServer({
           move = findAnyFreeMove(request);
         }
       } catch (error) {
+        if (cancellation.signal.aborted) return;
         console.error('Ошибка при выборе хода:', error);
         fallback = true;
         move = findAnyFreeMove(request);
@@ -338,7 +349,10 @@ export function createBotServer({
           sendError(res, 500, 'bot_error', 'Не удалось выбрать ход');
           return;
         }
+      } finally {
+        res.off('close', cancel);
       }
+      if (res.destroyed || cancellation.signal.aborted) return;
       if (!move) {
         sendError(res, 409, 'no_free_moves', 'На поле не осталось свободных пересечений');
         return;
