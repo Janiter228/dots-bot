@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dots Bot · панель</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%0A%20%20%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%230f172a%22%2F%3E%0A%20%20%3Cpolygon%20points%3D%2232%2C11%2053%2C32%2032%2C53%2011%2C32%22%20fill%3D%22%23ef4444%22%20fill-opacity%3D%220.18%22%20stroke%3D%22%23ef4444%22%20stroke-width%3D%225%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%2232%22%20cy%3D%2211%22%20r%3D%226.5%22%20fill%3D%22%23ef4444%22%2F%3E%3Ccircle%20cx%3D%2253%22%20cy%3D%2232%22%20r%3D%226.5%22%20fill%3D%22%23ef4444%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%2232%22%20cy%3D%2253%22%20r%3D%226.5%22%20fill%3D%22%23ef4444%22%2F%3E%3Ccircle%20cx%3D%2211%22%20cy%3D%2232%22%20r%3D%226.5%22%20fill%3D%22%23ef4444%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%2232%22%20cy%3D%2232%22%20r%3D%227.5%22%20fill%3D%22%233b82f6%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M28.5%2028.5l7%207M35.5%2028.5l-7%207%22%20stroke%3D%22%230f172a%22%20stroke-width%3D%222.6%22%20stroke-linecap%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #eef0f4; --surface: #fff; --panel: #f6f7fa; --ink: #182238;
+      --muted: #465674; --line: #c4ccdb; --grid: #b9c4d7; --accent: #22579e;
+      --green: #087252; --red: #b9283e; --blue: #225cc0; --amber: #855100;
+      --button: #213555; --button-ink: #fff;
+      --body-font: 'Trebuchet MS', 'Segoe UI', sans-serif;
+      --mono: 'Menlo', 'Consolas', monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme]) { color-scheme: dark; }
+    }
+    :root[data-theme="dark"], :root[data-system-theme="dark"]:not([data-theme]) {
+      color-scheme: dark;
+      --bg: #0c1322; --surface: #121d30; --panel: #101929; --ink: #f0f4fa;
+      --muted: #a6b5ce; --line: #36455f; --grid: #354762; --accent: #91bfff;
+      --green: #78dbb1; --red: #ff7b8c; --blue: #7fabff; --amber: #f9c877;
+      --button: #d8e8ff; --button-ink: #142037;
+    }
+    :root[data-theme="light"] { color-scheme: light; }
+    *, *::before, *::after { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 1rem/1.5 var(--body-font); }
+    body, button, input, select { transition: background-color .15s ease, color .15s ease; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition: none !important; animation: none !important; }
+    }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font: 700 clamp(1.9rem, 5vw, 3.35rem)/1 'Georgia', serif; letter-spacing: -.05em; }
+    h2 { font: 700 1.45rem/1.2 'Georgia', serif; }
+    h3 { font-size: 1rem; }
+    button, input, select { font: inherit; color: inherit; }
+    button, select { cursor: pointer; }
+    button, input, select {
+      min-height: 2.6rem; padding: .45rem .7rem; border: 1px solid var(--line);
+      border-radius: 5px; background: var(--surface);
+    }
+    button:hover, select:hover { border-color: var(--accent); }
+    button:disabled { cursor: default; opacity: .6; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    .primary { color: var(--button-ink); background: var(--button); border-color: var(--button); font-weight: bold; }
+    .wrap { width: min(100% - 2.5rem, 78rem); margin: auto; }
+    .masthead { border-bottom: 1px solid var(--line); background: var(--surface); box-shadow: inset 0 3px 0 var(--accent); }
+    .masthead .wrap { display: flex; justify-content: space-between; align-items: center; padding-block: 1.65rem; gap: 1.1rem; flex-wrap: wrap; }
+    .brand, .tools, .meta { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
+    .brand img { width: 3.1rem; height: 3.1rem; }
+    .subtitle { color: var(--muted); margin-top: .22rem; font-size: .9rem; }
+    .tools { justify-content: flex-end; }
+    .meta { color: var(--muted); font: .78rem/1.5 var(--mono); }
+    #health { color: var(--green); font-weight: bold; }
+    #health[data-state="error"] { color: var(--red); }
+    #health[data-state="pending"] { color: var(--muted); }
+    #health::before { content: ''; display: inline-block; width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; margin-right: .38rem; }
+    main { padding-block: 1.45rem 3rem; }
+    .statusline { display: flex; justify-content: space-between; gap: .5rem 1rem; flex-wrap: wrap; margin-bottom: .55rem; }
+    .caption { color: var(--muted); font-size: .86rem; }
+    .notice { color: var(--amber); font-size: .88rem; margin-block: .4rem; overflow-wrap: anywhere; }
+    .metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 8px; background: var(--surface); margin: 0 0 1.45rem; overflow: hidden; }
+    .metrics div { padding: .85rem 1rem; border-right: 1px solid var(--line); }
+    .metrics div:last-child { border-right: 0; }
+    .metrics dt { color: var(--muted); font-size: .83rem; }
+    .metrics dd { margin: .18rem 0 0; font: 1.18rem/1.5 var(--mono); overflow-wrap: anywhere; }
+    .workspace { margin-top: 1rem; display: grid; grid-template-columns: minmax(0, 2.65fr) minmax(15rem, 1fr); gap: 1rem; align-items: start; }
+    .box { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); min-width: 0; overflow: hidden; }
+    .box-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; padding: .8rem 1rem; border-bottom: 1px solid var(--line); }
+    .box-body { padding: .9rem 1rem; }
+    .board-shell { display: grid; place-items: center; position: relative; padding: .5rem; background: var(--panel); }
+    .board-shell:has(canvas[hidden]) { min-height: 23rem; background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-position: center center; background-size: 1.4rem 1.4rem; }
+    .empty { padding: .8rem 1.1rem; margin: 1rem; border-radius: 5px; border: 1px solid var(--line); background: var(--surface); text-align: center; }
+    #board { display: block; width: 100%; max-width: 42rem; height: clamp(16rem, 54vw, 34rem); }
+    #chart { display: block; width: 100%; height: 11.5rem; }
+    .replay { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .8rem; border-block: 1px solid var(--line); }
+    .replay input { flex: 1 1 9rem; min-width: 8rem; padding: 0; accent-color: var(--accent); }
+    .replay output { flex: 1 0 100%; }
+    .legend { display: flex; flex-wrap: wrap; gap: .3rem .9rem; }
+    .last, .played { display: inline-block; width: .7em; height: .7em; margin-inline-end: .2em; border: 1px solid currentColor; vertical-align: .02em; }
+    .played { border-radius: 50%; }
+    .red { color: var(--red); }
+    .blue { color: var(--blue); }
+    .filters { display: grid; grid-template-columns: 1fr 1fr; gap: .45rem; }
+    .filters label { display: grid; align-content: start; gap: .2rem; min-width: 0; }
+    .filters select { width: 100%; }
+    .mode { width: fit-content; border: 1px solid var(--line); border-radius: 4px; padding: .06rem .35rem; color: var(--muted); font-size: .75rem; }
+    .mode[data-mode="round"] { color: var(--accent); border-color: var(--accent); }
+    .mode[data-mode="practice"] { color: var(--green); border-color: var(--green); }
+    .mode[data-mode="check"] { color: var(--amber); border-color: var(--amber); }
+    .tabs { padding: 0; margin: .65rem 0 0; list-style: none; display: grid; gap: .35rem; }
+    .game-link { width: 100%; text-align: left; overflow-wrap: anywhere; }
+    .game-link span { display: block; }
+    .game-link[aria-pressed="true"] { border-color: var(--accent); background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
+    #game-title { overflow-wrap: anywhere; }
+    #auth label { display: block; font-weight: bold; }
+    .auth-entry { display: flex; gap: .4rem; margin-top: .35rem; }
+    .auth-entry input { width: 100%; min-width: 0; }
+    .table-shell { max-height: 26rem; overflow: auto; }
+    table { border-collapse: collapse; width: 100%; text-align: left; font-variant-numeric: tabular-nums; }
+    th, td { padding: .55rem .75rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    th { position: sticky; top: 0; color: var(--muted); background: var(--panel); font-size: .82rem; }
+    td { font-size: .88rem; }
+    @media (max-width: 50rem) {
+      .workspace { grid-template-columns: minmax(0, 1fr); }
+      .game-picker { grid-row: 1; }
+      .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .metrics div:nth-child(-n+3) { border-bottom: 1px solid var(--line); }
+      .metrics div:nth-child(3) { border-right: 0; }
+    }
+    @media (max-width: 28rem) {
+      .wrap { width: calc(100% - 1.25rem); }
+      .metrics div { padding: .6rem; }
+      .metrics dd { font-size: 1rem; }
+      .brand img { width: 2.55rem; height: 2.55rem; }
+      .board-shell:has(canvas[hidden]) { min-height: 16rem; }
+    }
+  </style>
+</head>
+<body>
+  <header class="masthead">
+    <div class="wrap">
+      <div class="brand">
+        <img id="brand-icon" width="50" height="50" alt="">
+        <div><h1>Точки</h1><p class="subtitle">Панель наблюдения за ботом</p></div>
+      </div>
+      <div class="tools">
+        <div class="meta"><span id="health" data-state="pending">Проверяем связь</span><span id="version"></span><span id="uptime"></span></div>
+        <button id="theme" type="button" aria-label="Переключить тему">Тема</button>
+        <button id="refresh" type="button" class="primary">Обновить</button>
+      </div>
+    </div>
+  </header>
+  <main class="wrap">
+    <section aria-labelledby="metrics-title">
+      <div class="statusline"><h2 id="metrics-title">За время работы</h2><p class="caption">Последний запрос <span id="last-request">—</span></p></div>
+      <p id="status-message" class="notice" role="status" hidden></p>
+      <dl class="metrics">
+        <div><dt>Ходы</dt><dd id="moves">—</dd></div>
+        <div><dt>Среднее время</dt><dd id="average">—</dd></div>
+        <div><dt>Макс. время</dt><dd id="maximum">—</dd></div>
+        <div><dt>Запасные</dt><dd id="fallbacks">—</dd></div>
+        <div><dt>Ошибки</dt><dd id="errors">—</dd></div>
+      </dl>
+      <button id="copy-address" type="button">Скопировать адрес бота</button>
+      <span id="copy-message" class="caption" role="status"></span>
+    </section>
+    <div class="workspace">
+      <article class="box" aria-labelledby="game-title">
+        <header class="box-head"><h2 id="game-title">Поле партии</h2><div class="tools"><span class="meta" id="game-meta"></span><button id="export" type="button" hidden>Скачать JSON</button></div></header>
+        <div class="board-shell">
+          <p id="empty-board" class="empty">Войдите в историю и выберите партию.</p>
+          <canvas id="board" role="img" aria-label="Последняя позиция на поле" hidden></canvas>
+        </div>
+        <div id="game-detail" hidden>
+          <div class="box-body caption legend" aria-label="Обозначения поля">
+            <span class="red">● Красные</span><span class="blue">● Синие</span><span>⊗ Мёртвая точка</span>
+            <span><i class="last"></i> Соперник</span><span><i class="played"></i> Ход бота</span>
+          </div>
+          <div class="box-body replay">
+            <button id="play" type="button">Воспроизвести</button>
+            <label for="replay">Ход бота</label><input id="replay" type="range" min="0" max="0" value="0">
+            <output id="frame" for="replay" class="caption"></output>
+          </div>
+          <div class="box-head"><h3>Время хода</h3><span class="caption">мс по номерам ходов</span></div>
+          <div class="box-body"><canvas id="chart" role="img" aria-label="График времени обработки ходов"></canvas></div>
+          <div class="box-head"><h3>Ходы</h3></div>
+          <div class="table-shell" tabindex="0" aria-label="Таблица ходов">
+            <table><thead><tr><th scope="col">№</th><th scope="col">Цвет бота</th><th scope="col">Соперник</th><th scope="col">Ход бота</th><th scope="col">Время</th><th scope="col">Отметка</th></tr></thead><tbody id="records"></tbody></table>
+          </div>
+        </div>
+      </article>
+      <aside class="box game-picker" aria-labelledby="games-title">
+        <header class="box-head"><h2 id="games-title">Партии</h2><button id="logout" type="button" hidden>Выйти</button></header>
+        <div class="box-body">
+          <form id="auth" autocomplete="off">
+            <label for="token">Токен панели</label>
+            <div class="auth-entry"><input id="token" type="password" autocomplete="off" required><button type="submit" class="primary">Войти</button></div>
+          </form>
+          <div id="filters" class="filters" hidden>
+            <label class="caption">Режим<select id="mode-filter"><option value="">Все</option><option value="check">Проверка</option><option value="practice">Тренировка</option><option value="round">Раунд</option><option value="unknown">Неизвестен</option></select></label>
+            <label class="caption">Цвет бота<select id="color-filter"><option value="">Любой</option><option value="red">Красный</option><option value="blue">Синий</option></select></label>
+          </div>
+          <p id="game-message" class="notice" role="status" hidden></p>
+          <p id="games-summary" class="caption" hidden></p>
+          <ul id="games" class="tabs" aria-label="Недавние партии"></ul>
+        </div>
+      </aside>
+    </div>
+  </main>
+  <script>
+    'use strict';
+    const byId = (id) => document.getElementById(id);
+    const root = document.documentElement;
+    const systemTheme = matchMedia('(prefers-color-scheme: dark)');
+    const modeNames = { check: 'Проверка', practice: 'Тренировка', round: 'Раунд', unknown: 'Режим неизвестен' };
+    const colors = { red: 'Красный', blue: 'Синий' };
+    const numbers = new Intl.NumberFormat('ru', { maximumFractionDigits: 0 });
+    const timings = new Intl.NumberFormat('ru', { maximumFractionDigits: 1 });
+    const dates = new Intl.DateTimeFormat('ru', { dateStyle: 'short', timeStyle: 'medium' });
+    const ms = (value) => `${timings.format(value)} мс`;
+    const date = (value) => value === null ? '—' : dates.format(value);
+    const score = (value) => `${value.red ?? '—'} : ${value.blue ?? '—'}`;
+    const coord = (point) => point ? `${point[0]}, ${point[1]}` : '—';
+    const moveCoord = (point) => point ? [point.x, point.y] : null;
+    let token = '';
+    let authenticated = false;
+    let games = [];
+    let selected = null;
+    let game = null;
+    let statusRequest;
+    let gamesRequest;
+    let timer;
+    let replayTimer;
+    let frames = [];
+    let frameMoveNo = null;
+
+    function notice(id, text) {
+      const element = byId(id);
+      if (element.textContent !== text) element.textContent = text;
+      element.hidden = !text;
+    }
+
+    async function fetchJson(path, options = {}) {
+      const timeout = AbortSignal.timeout(6000);
+      const signal = options.signal ? AbortSignal.any([timeout, options.signal]) : timeout;
+      const response = await fetch(path, { cache: 'no-store', ...options, signal });
+      if (!response.ok) {
+        const error = new Error(`HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+      return response.json();
+    }
+
+    function updateTheme() {
+      root.dataset.systemTheme = systemTheme.matches ? 'dark' : 'light';
+      const dark = root.dataset.theme ? root.dataset.theme === 'dark' : systemTheme.matches;
+      byId('theme').textContent = dark ? 'Светлая тема' : 'Тёмная тема';
+      requestAnimationFrame(drawCanvases);
+    }
+
+    function uptime(seconds) {
+      const time = Math.floor(seconds);
+      const clock = [Math.floor(time / 3600) % 24, Math.floor(time / 60) % 60, time % 60]
+        .map((part) => String(part).padStart(2, '0')).join(':');
+      return time >= 86400 ? `${Math.floor(time / 86400)} д ${clock}` : clock;
+    }
+
+    async function refreshStatus() {
+      if (statusRequest) return statusRequest;
+      statusRequest = Promise.allSettled([fetchJson('/v1/health'), fetchJson('/api/status')]).then(([health, status]) => {
+        const alive = health.status === 'fulfilled' && health.value.status === 'ok';
+        byId('health').dataset.state = alive ? 'ok' : 'error';
+        byId('health').textContent = alive ? 'Бот на связи' : 'Нет связи с ботом';
+        if (status.status !== 'fulfilled') {
+          notice('status-message', 'Метрики сейчас недоступны. Панель попробует снова при обновлении.');
+          return;
+        }
+        const data = status.value;
+        byId('version').textContent = `v${data.version}`;
+        byId('uptime').textContent = uptime(data.uptimeSeconds);
+        byId('uptime').title = 'Время работы бота';
+        byId('last-request').textContent = date(data.lastRequestAt);
+        byId('moves').textContent = numbers.format(data.moves);
+        byId('average').textContent = ms(data.averageMoveMs);
+        byId('maximum').textContent = ms(data.maxMoveMs);
+        const share = data.moves ? timings.format(100 * data.fallbackMoves / data.moves) : '0';
+        byId('fallbacks').textContent = `${numbers.format(data.fallbackMoves)} · ${share}%`;
+        byId('errors').textContent = numbers.format(data.errors);
+        notice('status-message', data.recordingErrors ? `Сбоев записи истории: ${numbers.format(data.recordingErrors)}.` : '');
+      }).finally(() => { statusRequest = null; });
+      return statusRequest;
+    }
+
+    function filteredGames() {
+      const mode = byId('mode-filter').value;
+      const color = byId('color-filter').value;
+      return games.filter((item) => (!mode || item.mode === mode) && (!color || item.you === color));
+    }
+
+    function selectAvailable(items) {
+      if (items.some((item) => item.id === selected)) return;
+      selected = items[0]?.id ?? null;
+      resetReplay();
+      game = null;
+    }
+
+    function renderGames() {
+      const list = byId('games');
+      const scored = games.filter((item) => item.score.red !== null && item.score.blue !== null);
+      const mean = (color) => timings.format(scored.reduce((sum, item) => sum + item.score[color], 0) / scored.length);
+      const count = `Партий в истории: ${numbers.format(games.length)}.`;
+      byId('games-summary').textContent = scored.length ? `${count} Средний счёт: ${mean('red')} : ${mean('blue')}.` : count;
+      const activeId = list.contains(document.activeElement) ? document.activeElement.dataset.id : undefined;
+      const items = filteredGames();
+      const signature = JSON.stringify([items, selected]);
+      if (list.dataset.signature === signature) return;
+      list.dataset.signature = signature;
+      const fragment = document.createDocumentFragment();
+      for (const item of items) {
+        const row = document.createElement('li');
+        const button = document.createElement('button');
+        const title = document.createElement('span');
+        const details = document.createElement('span');
+        const badge = document.createElement('span');
+        button.type = 'button';
+        button.className = 'game-link';
+        button.dataset.id = item.id;
+        button.setAttribute('aria-pressed', String(item.id === selected));
+        title.textContent = item.id;
+        details.className = 'caption';
+        details.textContent = `${item.moveCount} зап. · ${score(item.score)} · ${date(item.lastMoveAt)}`;
+        badge.className = 'mode';
+        badge.dataset.mode = item.mode;
+        badge.textContent = modeNames[item.mode];
+        button.append(title, details, badge);
+        row.append(button);
+        fragment.append(row);
+      }
+      list.replaceChildren(fragment);
+      if (activeId !== undefined) Array.from(list.querySelectorAll('button')).find((button) => button.dataset.id === activeId)?.focus({ preventScroll: true });
+    }
+
+    function setAuthenticated(value) {
+      authenticated = value;
+      byId('auth').hidden = value;
+      byId('logout').hidden = !value;
+      byId('filters').hidden = !value;
+      byId('games-summary').hidden = !value;
+    }
+
+    function clearGames() {
+      gamesRequest?.abort();
+      gamesRequest = null;
+      token = '';
+      selected = null;
+      games = [];
+      game = null;
+      setAuthenticated(false);
+      byId('mode-filter').value = '';
+      byId('color-filter').value = '';
+      resetReplay();
+      renderGames();
+      renderGame();
+    }
+
+    async function refreshGames(force = false) {
+      if (!token || (gamesRequest && !force)) return;
+      gamesRequest?.abort();
+      const controller = new AbortController();
+      gamesRequest = controller;
+      const options = { signal: controller.signal, headers: { Authorization: `Bearer ${token}` } };
+      try {
+        const data = await fetchJson('/api/games', options);
+        if (controller.signal.aborted) return;
+        games = data;
+        setAuthenticated(true);
+        const items = filteredGames();
+        selectAvailable(items);
+        renderGames();
+        notice('game-message', items.length ? '' : (games.length ? 'Нет партий с такими фильтрами.' : 'Партии появятся после первого запроса хода.'));
+        const summary = items.find((item) => item.id === selected);
+        if (summary && (force || game?.id !== selected || game.revision !== summary.revision || game.lastMoveAt !== summary.lastMoveAt)) {
+          const nextGame = await fetchJson(`/api/games/${encodeURIComponent(selected)}`, options);
+          if (controller.signal.aborted) return;
+          game = nextGame;
+          renderGame();
+        } else if (!summary) {
+          renderGame();
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        if (error.status === 401 || error.status === 403) {
+          clearGames();
+          notice('game-message', error.status === 401 ? 'Токен не подошёл. Введите действующий токен панели.' : 'История закрыта. Задайте DASHBOARD_TOKEN на сервере.');
+          return;
+        }
+        if (!game) renderGame();
+        notice('game-message', error.status === 404 ? 'Эта партия уже недоступна. Список обновится.' : 'История сейчас недоступна. Попробуйте обновить панель.');
+      } finally {
+        if (gamesRequest === controller) gamesRequest = null;
+      }
+    }
+
+    function renderGame() {
+      const snapshot = game?.snapshot;
+      byId('game-title').textContent = game?.id ?? 'Поле партии';
+      byId('game-meta').textContent = snapshot ? `${snapshot.field.width} × ${snapshot.field.height} · ${score(snapshot.score)}` : '';
+      byId('empty-board').hidden = Boolean(snapshot);
+      byId('empty-board').textContent = authenticated ? 'Здесь появится поле партии.' : 'Войдите в историю и выберите партию.';
+      byId('board').hidden = !snapshot;
+      byId('game-detail').hidden = !snapshot;
+      byId('export').hidden = !snapshot;
+      const rows = document.createDocumentFragment();
+      for (const record of game?.moves ?? []) {
+        const tr = document.createElement('tr');
+        const mark = record.status === 200 ? (record.fallback ? 'Запасной' : '—') : `Ошибка ${record.status}`;
+        for (const value of [record.moveNo, colors[record.you], coord(record.last), coord(moveCoord(record.move)), ms(record.durationMs), mark]) {
+          const td = document.createElement('td');
+          td.textContent = value;
+          tr.append(td);
+        }
+        tr.cells[1].className = record.you;
+        rows.append(tr);
+      }
+      byId('records').replaceChildren(rows);
+      const byMove = new Map((game?.moves ?? []).map((entry) => [entry.moveNo, entry]));
+      if (snapshot) byMove.set(snapshot.moveNo, snapshot);
+      frames = Array.from(byMove.values()).filter((entry) => entry.moveNo <= snapshot.moveNo)
+        .sort((a, b) => a.moveNo - b.moveNo);
+      byId('replay').max = Math.max(0, frames.length - 1);
+      byId('replay').disabled = frames.length < 2;
+      byId('play').disabled = frames.length < 2;
+      renderFrame();
+      drawCanvases();
+    }
+
+    function stopReplay() {
+      clearInterval(replayTimer);
+      replayTimer = null;
+      byId('play').textContent = 'Воспроизвести';
+    }
+
+    function resetReplay() {
+      stopReplay();
+      frameMoveNo = null;
+    }
+
+    function renderFrame() {
+      if (!frames.length) return;
+      const snapshot = game.snapshot;
+      let index = frames.findIndex((entry) => entry.moveNo === frameMoveNo);
+      if (index < 0) {
+        index = frames.length - 1;
+        frameMoveNo = null;
+      }
+      const latest = index === frames.length - 1;
+      byId('replay').value = index;
+      byId('frame').textContent = `Ход №${frames[index].moveNo} · ${latest ? 'снимок до ответа бота' : 'приближённо, без данных о мёртвых точках'}`;
+      byId('board').setAttribute('aria-label', byId('frame').textContent);
+      byId('game-meta').textContent = `${snapshot.field.width} × ${snapshot.field.height} · ${latest ? score(snapshot.score) : 'счёт снимка ' + score(snapshot.score)}`;
+    }
+
+    function showFrame(index) {
+      frameMoveNo = index === frames.length - 1 ? null : frames[index].moveNo;
+      renderFrame();
+      drawCanvases();
+    }
+
+    function boardPosition() {
+      const snapshot = game.snapshot;
+      const frame = frames[Number(byId('replay').value)];
+      if (frame === snapshot) return snapshot;
+      // Красные ходят первыми, в points ходы каждого цвета идут по порядку постановки.
+      const preceding = frame.moveNo - 1;
+      return {
+        ...frame, field: snapshot.field,
+        points: { red: snapshot.points.red.slice(0, Math.ceil(preceding / 2)), blue: snapshot.points.blue.slice(0, Math.floor(preceding / 2)) },
+        dead: { red: [], blue: [] },
+      };
+    }
+
+    function canvasContext(id) {
+      const canvas = byId(id);
+      const { width, height } = canvas.getBoundingClientRect();
+      if (!width || !height) return null;
+      const scale = Math.min(devicePixelRatio || 1, 3);
+      canvas.width = Math.round(width * scale);
+      canvas.height = Math.round(height * scale);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.scale(scale, scale);
+      return { ctx, width, height };
+    }
+
+    function drawBoard(snapshot, paint) {
+      const surface = canvasContext('board');
+      if (!surface) return;
+      const { ctx, width, height } = surface;
+      const { width: cols, height: rows } = snapshot.field;
+      const step = Math.min((width - 36) / Math.max(1, cols - 1), (height - 36) / Math.max(1, rows - 1), 45);
+      if (step <= 0) return;
+      const left = (width - (cols - 1) * step) / 2;
+      const top = (height - (rows - 1) * step) / 2;
+      const x = (column) => left + column * step;
+      const y = (row) => top + row * step;
+      const radius = Math.max(.6, Math.min(step * .37, 7));
+      ctx.strokeStyle = paint('--grid');
+      ctx.lineWidth = .75;
+      ctx.beginPath();
+      const stride = Math.max(1, Math.ceil(3 / step));
+      for (let col = 0; col < cols; col += stride) { ctx.moveTo(x(col), top); ctx.lineTo(x(col), y(rows - 1)); }
+      for (let row = 0; row < rows; row += stride) { ctx.moveTo(left, y(row)); ctx.lineTo(x(cols - 1), y(row)); }
+      ctx.stroke();
+      for (const color of ['red', 'blue']) {
+        const dead = new Set(snapshot.dead[color].map((point) => point.join(',')));
+        ctx.fillStyle = paint(`--${color}`);
+        ctx.strokeStyle = paint('--panel');
+        ctx.lineWidth = Math.max(.65, radius * .29);
+        for (const point of snapshot.points[color]) {
+          const px = x(point[0]);
+          const py = y(point[1]);
+          ctx.beginPath();
+          ctx.arc(px, py, radius, 0, Math.PI * 2);
+          ctx.fill();
+          if (dead.has(point.join(','))) {
+            const cross = radius * .65;
+            ctx.beginPath();
+            ctx.moveTo(px - cross, py - cross); ctx.lineTo(px + cross, py + cross);
+            ctx.moveTo(px + cross, py - cross); ctx.lineTo(px - cross, py + cross);
+            ctx.stroke();
+          }
+        }
+      }
+      const own = moveCoord(snapshot.move);
+      ctx.lineWidth = 1.5;
+      const outline = Math.max(4, radius + 3);
+      if (snapshot.last) {
+        const [col, row] = snapshot.last;
+        ctx.strokeStyle = paint('--ink');
+        ctx.strokeRect(x(col) - outline, y(row) - outline, outline * 2, outline * 2);
+      }
+      if (own) {
+        ctx.strokeStyle = paint(`--${snapshot.you}`);
+        ctx.fillStyle = ctx.strokeStyle;
+        ctx.beginPath();
+        ctx.arc(x(own[0]), y(own[1]), Math.min(radius, 3), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x(own[0]), y(own[1]), outline, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    function drawChart(records, paint) {
+      const surface = canvasContext('chart');
+      if (!surface || !records.length) return;
+      const { ctx, width, height } = surface;
+      const left = 52;
+      const right = width - 18;
+      const top = 12;
+      const bottom = height - 28;
+      const sorted = records.slice().sort((a, b) => a.moveNo - b.moveNo);
+      const minMove = sorted[0].moveNo;
+      const maxMove = sorted.at(-1).moveNo;
+      const maxTime = Math.max(1, ...sorted.map((move) => move.durationMs));
+      const x = (n) => minMove === maxMove ? (left + right) / 2 : left + (n - minMove) / (maxMove - minMove) * (right - left);
+      const y = (time) => bottom - time / maxTime * (bottom - top);
+      ctx.font = '11px monospace';
+      ctx.lineWidth = 1;
+      ctx.fillStyle = paint('--muted');
+      ctx.strokeStyle = paint('--line');
+      for (const time of [0, maxTime / 2, maxTime]) {
+        const py = y(time);
+        ctx.beginPath(); ctx.moveTo(left, py); ctx.lineTo(right, py); ctx.stroke();
+        ctx.textAlign = 'right'; ctx.fillText(timings.format(time), left - 6, py + 4);
+      }
+      const ticks = Math.max(1, Math.min(4, maxMove - minMove));
+      ctx.textAlign = 'center';
+      for (const n of new Set(Array.from({ length: ticks + 1 }, (_, i) => minMove + Math.round(i / ticks * (maxMove - minMove))))) {
+        ctx.fillText(`#${n}`, x(n), height - 7);
+      }
+      ctx.strokeStyle = paint('--accent');
+      ctx.lineWidth = 1.7;
+      ctx.beginPath();
+      sorted.forEach((move, index) => {
+        ctx[index ? 'lineTo' : 'moveTo'](x(move.moveNo), y(move.durationMs));
+      });
+      ctx.stroke();
+      for (const move of sorted) {
+        ctx.fillStyle = paint(move.fallback ? '--amber' : '--accent');
+        ctx.beginPath(); ctx.arc(x(move.moveNo), y(move.durationMs), 2.3, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    function drawCanvases() {
+      if (!game) return;
+      const style = getComputedStyle(root);
+      const paint = (name) => style.getPropertyValue(name).trim();
+      drawBoard(boardPosition(), paint);
+      drawChart(game.moves, paint);
+    }
+
+    function refresh(force = false) {
+      refreshStatus();
+      refreshGames(force);
+    }
+
+    function schedule() {
+      clearInterval(timer);
+      if (document.hidden) {
+        stopReplay();
+        return;
+      }
+      refresh();
+      timer = setInterval(refresh, 2000);
+    }
+
+    byId('theme').addEventListener('click', () => {
+      const current = root.dataset.theme ?? (systemTheme.matches ? 'dark' : 'light');
+      root.dataset.theme = current === 'dark' ? 'light' : 'dark';
+      updateTheme();
+    });
+    systemTheme.addEventListener('change', updateTheme);
+    byId('auth').addEventListener('submit', (event) => {
+      event.preventDefault();
+      token = byId('token').value.trim();
+      byId('token').value = '';
+      notice('game-message', token ? 'Проверяем токен…' : 'Введите токен панели.');
+      refreshGames(true);
+    });
+    byId('logout').addEventListener('click', () => {
+      clearGames();
+      notice('game-message', '');
+      byId('token').focus();
+    });
+    byId('games').addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-id]');
+      if (!button || button.dataset.id === selected) return;
+      selected = button.dataset.id;
+      resetReplay();
+      game = null;
+      renderGames();
+      renderGame();
+      refreshGames(true);
+    });
+    byId('export').addEventListener('click', () => {
+      if (!game) return;
+      const url = URL.createObjectURL(new Blob([JSON.stringify(game, null, 2)], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `dots-${game.id.replace(/[^\p{L}\p{N}_.-]/gu, '_').slice(0, 100)}.json`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    byId('filters').addEventListener('change', () => {
+      selectAvailable(filteredGames());
+      renderGames();
+      renderGame();
+      refreshGames(true);
+    });
+    byId('replay').addEventListener('input', (event) => {
+      stopReplay();
+      showFrame(Number(event.target.value));
+    });
+    byId('play').addEventListener('click', () => {
+      if (replayTimer) { stopReplay(); return; }
+      if (Number(byId('replay').value) >= frames.length - 1) showFrame(0);
+      byId('play').textContent = 'Пауза';
+      replayTimer = setInterval(() => {
+        const index = Number(byId('replay').value) + 1;
+        if (index < frames.length) showFrame(index);
+        if (index >= frames.length - 1) stopReplay();
+      }, 700);
+    });
+    byId('copy-address').hidden = !['http:', 'https:'].includes(location.protocol);
+    byId('copy-address').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(location.origin);
+        notice('copy-message', 'Адрес скопирован.');
+      } catch {
+        notice('copy-message', `Адрес бота: ${location.origin}`);
+      }
+    });
+    byId('refresh').addEventListener('click', () => refresh(true));
+    document.addEventListener('visibilitychange', schedule);
+    const resize = new ResizeObserver(drawCanvases);
+    resize.observe(byId('board'));
+    resize.observe(byId('chart'));
+    byId('brand-icon').src = document.querySelector('link[rel=icon]').href;
+    updateTheme();
+    schedule();
+  </script>
+</body>
+</html>
