@@ -412,6 +412,7 @@ if (isMainModule) {
     line('Информация', 'GET  /v1/info');
     line('Ход бота', 'POST /v1/move');
     line('Авторизация', process.env.BOT_TOKEN ? 'Включена · Bearer-токен' : 'Без токена');
+    line('Панель', process.env.DASHBOARD_TOKEN ? 'Партии защищены токеном' : 'Задайте DASHBOARD_TOKEN');
     console.log('');
     line('Играть', 'Откройте web/index.html в браузере');
     line('Остановить', paint('Ctrl+C', '1;93'));

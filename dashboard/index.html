@@ -398,12 +398,13 @@
       renderGame();
     }
 
-    async function refreshGames(force = false) {
-      if (!token || (gamesRequest && !force)) return;
+    async function refreshGames(force = false, checkAvailability = false) {
+      if ((!token && !checkAvailability) || (gamesRequest && !force)) return;
       gamesRequest?.abort();
       const controller = new AbortController();
       gamesRequest = controller;
-      const options = { signal: controller.signal, headers: { Authorization: `Bearer ${token}` } };
+      const options = { signal: controller.signal };
+      if (token) options.headers = { Authorization: `Bearer ${token}` };
       let recentRequest;
       try {
         const data = await fetchJson('/api/games', options);
@@ -426,9 +427,10 @@
         }
       } catch (error) {
         if (controller.signal.aborted) return;
+        if (error.status === 401 && !token) return;
         if (error.status === 401 || error.status === 403) {
           clearGames();
-          notice('game-message', error.status === 401 ? 'Токен не подошёл. Введите действующий токен панели.' : 'История закрыта. Задайте DASHBOARD_TOKEN на сервере.');
+          notice('game-message', error.status === 401 ? 'Неверный токен' : 'Задайте DASHBOARD_TOKEN на сервере и перезапустите контейнер');
           return;
         }
         if (!game) renderGame();
@@ -727,6 +729,7 @@
     byId('brand-icon').src = document.querySelector('link[rel=icon]').href;
     updateTheme();
     schedule();
+    refreshGames(false, true);
   </script>
 </body>
 </html>
