@@ -123,17 +123,13 @@ test('повтор хода возвращает первый ответ, а д�
   for (let i = 0; i < 3; i++) assert.deepEqual(await postMove(position), first);
 
   const largerField = { ...position, field: { width: 5, height: 5 } };
-  // Изменённая позиция делает пересчёт наблюдаемым при том же ключе повтора.
-  assert.deepEqual(await postMove(largerField), first);
+  // Размер поля входит в отпечаток, поэтому тот же номер хода пересчитывается.
+  assert.deepEqual(await postMove(largerField), { x: 2, y: 2 });
   assert.deepEqual(await postMove({ ...largerField, gameId: 'different-game' }), { x: 2, y: 2 });
   assert.deepEqual(await postMove({ ...largerField, moveNo: 2 }), { x: 2, y: 2 });
 
-  const response = await fetch(`${baseUrl}/v1/move`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Arena-Seq': '1' },
-    body: JSON.stringify({ ...position, points: { red: [], blue: [[1, 1]] } }),
-  });
-  assert.equal(response.status, 409);
-  assert.equal((await response.json()).error.code, 'conflicting_position');
+  const changed = await postMove({ ...position, points: { red: [], blue: [[1, 1]] } });
+  assert.notDeepEqual(changed, first);
 });
 
 test('HTTP-ход при вложенном окружении указывает свободную клетку', async () => {

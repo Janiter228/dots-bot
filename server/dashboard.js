@@ -63,6 +63,7 @@ export async function serveDashboardFile(req, res, rawPath) {
 const MAX_GAMES = 20;
 const MAX_MOVES = 3000;
 const MAX_RECENT_MOVES = 10;
+const ACTIVE_MS = 30_000;
 const MODES = new Set(['check', 'practice', 'round']);
 const COLORS = ['red', 'blue'];
 
@@ -80,9 +81,15 @@ function readDead(dead, { width, height }) {
   ]));
 }
 
-function describeGame(game) {
+function compareActivity(a, b) {
+  return a.session.lastActivityAt - b.session.lastActivityAt || a.session.activityOrder - b.session.activityOrder;
+}
+
+function describeGame(game, now) {
+  const { id, gameId, field, startedAt, lastActivityAt } = game.session;
   return {
-    id: game.id, mode: game.mode, you: game.snapshot.you,
+    id, gameId, field, startedAt, lastActivityAt, active: now - lastActivityAt < ACTIVE_MS,
+    mode: game.mode, you: game.snapshot.you,
     moveCount: game.moves.size, revision: game.sequence, lastMoveAt: game.lastMoveAt,
     score: game.snapshot.score,
   };
@@ -101,7 +108,7 @@ export function createDashboard() {
   let lastRequestAt = null;
 
   return {
-    record({ request, mode, move, fallback, receivedAt, durationMs, status }) {
+    record({ request, session, mode, move, fallback, receivedAt, durationMs, status }) {
       lastRequestAt = Math.max(lastRequestAt ?? receivedAt, receivedAt);
       if (status === 200) {
         moves += 1;
@@ -111,7 +118,7 @@ export function createDashboard() {
       } else {
         errors += 1;
       }
-      if (!request) return;
+      if (!request || !session) return;
 
       const { gameId, moveNo, you, last, points } = request;
       const { width, height } = request.field;
@@ -119,7 +126,7 @@ export function createDashboard() {
       const score = readScore(request.score);
       const arenaMode = MODES.has(mode) ? mode : 'unknown';
       const record = { moveNo, mode: arenaMode, you, field, last: last ?? null, move, durationMs, fallback, score, receivedAt, status };
-      const game = games.get(gameId) ?? { id: gameId, moves: new Map(), sequence: 0, mode: 'unknown' };
+      const game = games.get(session.id) ?? { session, moves: new Map(), sequence: 0, mode: 'unknown' };
       if (!game.snapshot || moveNo > game.snapshot.moveNo ||
           (moveNo === game.snapshot.moveNo && receivedAt >= game.snapshot.receivedAt)) {
         game.snapshot = { ...record, points: { red: points.red, blue: points.blue }, dead: readDead(request.dead, field) };
@@ -129,14 +136,17 @@ export function createDashboard() {
       game.sequence += 1;
       game.moves.set(game.sequence, record);
       if (game.moves.size > MAX_MOVES) game.moves.delete(game.moves.keys().next().value);
-      games.delete(gameId);
-      games.set(gameId, game);
-      if (games.size > MAX_GAMES) games.delete(games.keys().next().value);
+      games.set(session.id, game);
+      if (games.size > MAX_GAMES) {
+        // При одинаковом пороге активности самая давняя сессия неактивна первой.
+        const oldest = Array.from(games.values()).reduce((a, b) => compareActivity(a, b) <= 0 ? a : b);
+        games.delete(oldest.session.id);
+      }
 
       if (status === 200) {
-        const previous = recent.findIndex((entry) => entry.gameId === gameId && entry.moveNo === moveNo);
+        const previous = recent.findIndex((entry) => entry.sessionId === session.id && entry.moveNo === moveNo);
         if (previous !== -1) recent.splice(previous, 1);
-        recent.unshift({ gameId: game.id, moveNo, you, last: record.last, move, fallback, receivedAt });
+        recent.unshift({ gameId, sessionId: session.id, moveNo, you, last: record.last, move, fallback, receivedAt });
         if (recent.length > MAX_RECENT_MOVES) recent.pop();
       }
     },
@@ -151,16 +161,20 @@ export function createDashboard() {
       };
     },
     list() {
-      return Array.from(games.values(), describeGame).reverse();
+      const now = Date.now();
+      return Array.from(games.values()).sort((a, b) => compareActivity(b, a)).map((game) => describeGame(game, now));
+    },
+    hasSession(id) {
+      return games.has(id);
     },
     recent() {
-      return recent.filter((entry) => games.has(entry.gameId));
+      return recent.filter((entry) => games.has(entry.sessionId));
     },
     get(id) {
       const game = games.get(id);
       if (!game) return null;
       return {
-        ...describeGame(game),
+        ...describeGame(game, Date.now()),
         moves: Array.from(game.moves.values()),
         snapshot: game.snapshot,
       };

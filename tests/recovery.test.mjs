@@ -43,15 +43,15 @@ test('после десяти секунд без запросов партия 
   assert.deepEqual(await client.move('reload', [[1, 1]]), resumed);
 });
 
-test('запросы без новых синих точек продлевают жизнь кэша и сохраняют проверку конфликтов', async (t) => {
+test('точные повторы продлевают жизнь кэша, изменённая позиция пересчитывается', async (t) => {
   const client = await setup(t);
   const first = await client.move('active');
   client.advance(IDLE_MS - 1);
   assert.deepEqual(await client.move('active'), first);
   client.advance(IDLE_MS - 1);
-  const conflict = await client.move('active', [[first.body.x, first.body.y]]);
-  assert.equal(conflict.status, 409);
-  assert.equal(conflict.body.error.code, 'conflicting_position');
+  const changed = await client.move('active', [[first.body.x, first.body.y]]);
+  assert.equal(changed.status, 200);
+  assert.notDeepEqual(changed.body, first.body);
 });
 
 test('сброс простаивающей партии не сбрасывает кэш активной партии', async (t) => {
@@ -64,5 +64,8 @@ test('сброс простаивающей партии не сбрасывае
   const resumed = await client.move('idle', [[idle.body.x, idle.body.y]]);
   assert.equal(resumed.status, 200);
   assert.notDeepEqual(resumed.body, idle.body);
-  assert.equal((await client.move('active', [[active.body.x, active.body.y]])).status, 409);
+  assert.deepEqual(await client.move('active'), active);
+  const changed = await client.move('active', [[active.body.x, active.body.y]]);
+  assert.equal(changed.status, 200);
+  assert.notDeepEqual(changed.body, active.body);
 });
