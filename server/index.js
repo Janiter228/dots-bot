@@ -1,7 +1,9 @@
 import http from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chooseMove, BOT_VERSION } from '../bot/index.js';
+import { createDashboard, serveDashboardFile } from './dashboard.js';
 
 const PORT = Number(process.env.PORT || 4003);
 const BODY_LIMIT_BYTES = 8 * 1024 * 1024;
@@ -164,9 +166,57 @@ function isLegalMove(move, request) {
     !request.points.blue.some(([x, y]) => `${x},${y}` === key);
 }
 
-export function createBotServer({ botToken = process.env.BOT_TOKEN } = {}) {
+export function createBotServer({
+  botToken = process.env.BOT_TOKEN,
+  dashboardToken = process.env.DASHBOARD_TOKEN,
+  serveDashboard = process.env.SERVE_DASHBOARD !== '0',
+  dashboard = createDashboard(),
+} = {}) {
   const games = new Map();
+  const fallbackResponses = new WeakSet();
+  const expectedAuthorization = dashboardToken && Buffer.from(`Bearer ${dashboardToken}`);
   return http.createServer(async (req, res) => {
+    const rawPath = (req.url || '/').split('?', 1)[0];
+    if (!rawPath.startsWith('/v1/')) {
+      if (req.method === 'GET' && rawPath === '/api/status') {
+        sendJson(res, 200, dashboard.status(BOT_VERSION));
+        return;
+      }
+      if (req.method === 'GET' && (rawPath === '/api/games' || rawPath.startsWith('/api/games/'))) {
+        if (!expectedAuthorization) {
+          sendError(res, 403, 'forbidden', 'Чтобы открыть партии, задайте DASHBOARD_TOKEN на сервере');
+          return;
+        }
+        const authorization = Buffer.from(req.headers.authorization || '');
+        if (authorization.length !== expectedAuthorization.length || !timingSafeEqual(authorization, expectedAuthorization)) {
+          sendError(res, 401, 'unauthorized', 'Введите действующий токен панели');
+          return;
+        }
+        if (rawPath === '/api/games') {
+          sendJson(res, 200, dashboard.list());
+          return;
+        }
+        const id = rawPath.slice('/api/games/'.length);
+        let game;
+        if (id && !id.includes('/')) {
+          try {
+            game = dashboard.get(decodeURIComponent(id));
+          } catch (error) {
+            if (!(error instanceof URIError)) throw error;
+          }
+        }
+        if (game) {
+          sendJson(res, 200, game);
+          return;
+        }
+        sendError(res, 404, 'not_found', 'Партия не найдена');
+        return;
+      }
+      if (serveDashboard && await serveDashboardFile(req, res, rawPath)) return;
+      sendError(res, 404, 'not_found', 'Маршрут не найден');
+      return;
+    }
+
     addCorsHeaders(req, res);
 
     if (req.method === 'OPTIONS') {
@@ -193,6 +243,25 @@ export function createBotServer({ botToken = process.env.BOT_TOKEN } = {}) {
     }
 
     if (req.method === 'POST' && url.pathname === '/v1/move') {
+      const receivedAt = Date.now();
+      const startedAt = performance.now();
+      const mode = req.headers['x-arena-mode'];
+      let position;
+      let playedMove = null;
+      let fallback = false;
+      // Считаем время до отправки и переносим сбор истории за пределы ответа.
+      res.once('finish', () => {
+        const durationMs = performance.now() - startedAt;
+        const status = res.statusCode;
+        setImmediate(() => {
+          try {
+            dashboard.record({ request: position, mode, move: playedMove, fallback, receivedAt, durationMs, status });
+          } catch {
+            dashboard.recordError();
+          }
+        });
+      });
+
       if (botToken) {
         const authorization = req.headers.authorization || '';
         if (authorization !== `Bearer ${botToken}`) {
@@ -225,6 +294,7 @@ export function createBotServer({ botToken = process.env.BOT_TOKEN } = {}) {
         sendError(res, 400, 'bad_request', validationError);
         return;
       }
+      position = request;
 
       const { gameId, moveNo } = request;
       const now = Date.now();
@@ -241,6 +311,8 @@ export function createBotServer({ botToken = process.env.BOT_TOKEN } = {}) {
       const cachedMove = game.moves.get(moveNo);
       if (cachedMove) {
         if (isLegalMove(cachedMove, request)) {
+          playedMove = cachedMove;
+          fallback = fallbackResponses.has(cachedMove);
           sendJson(res, 200, cachedMove);
         } else {
           sendError(res, 409, 'conflicting_position', 'Сохранённый ход недопустим для повторно переданной позиции');
@@ -255,10 +327,12 @@ export function createBotServer({ botToken = process.env.BOT_TOKEN } = {}) {
         // Если стратегия вернула некорректную клетку, выбираем любую свободную.
         if (!isLegalMove(move, request)) {
           console.warn('Алгоритм вернул недопустимый ход; используется запасной ход.');
+          fallback = true;
           move = findAnyFreeMove(request);
         }
       } catch (error) {
         console.error('Ошибка при выборе хода:', error);
+        fallback = true;
         move = findAnyFreeMove(request);
         if (!move) {
           sendError(res, 500, 'bot_error', 'Не удалось выбрать ход');
@@ -270,6 +344,8 @@ export function createBotServer({ botToken = process.env.BOT_TOKEN } = {}) {
         return;
       }
       const response = { x: move.x, y: move.y };
+      playedMove = response;
+      if (fallback) fallbackResponses.add(response);
       game.moves.set(moveNo, response);
       sendJson(res, 200, response);
       return;
