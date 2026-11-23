@@ -176,8 +176,9 @@ test('ошибочные запросы не мешают следующему �
 test('полное поле возвращает 409', async () => {
   const response = await fetch(`${baseUrl}/v1/move`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
+    // Проверяем полное поле, а не тайм-аут запуска воркера.
     body: JSON.stringify({ ...emptyPosition, gameId: 'full-field', field: { width: 1, height: 1 },
-      points: { red: [[0, 0]], blue: [] } }),
+      points: { red: [[0, 0]], blue: [] }, moveTimeoutMs: 5000 }),
   });
   assert.equal(response.status, 409);
   assert.equal((await response.json()).error.code, 'no_free_moves');
