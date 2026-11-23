@@ -62,6 +62,7 @@ export async function serveDashboardFile(req, res, rawPath) {
 
 const MAX_GAMES = 20;
 const MAX_MOVES = 3000;
+const MAX_RECENT_MOVES = 10;
 const MODES = new Set(['check', 'practice', 'round']);
 const COLORS = ['red', 'blue'];
 
@@ -90,6 +91,7 @@ function describeGame(game) {
 export function createDashboard() {
   const startedAt = performance.now();
   const games = new Map();
+  const recent = [];
   let moves = 0;
   let totalMs = 0;
   let maxMs = 0;
@@ -130,6 +132,13 @@ export function createDashboard() {
       games.delete(gameId);
       games.set(gameId, game);
       if (games.size > MAX_GAMES) games.delete(games.keys().next().value);
+
+      if (status === 200) {
+        const previous = recent.findIndex((entry) => entry.gameId === gameId && entry.moveNo === moveNo);
+        if (previous !== -1) recent.splice(previous, 1);
+        recent.unshift({ gameId: game.id, moveNo, you, last: record.last, move, fallback, receivedAt });
+        if (recent.length > MAX_RECENT_MOVES) recent.pop();
+      }
     },
     recordError() {
       recordingErrors += 1;
@@ -143,6 +152,9 @@ export function createDashboard() {
     },
     list() {
       return Array.from(games.values(), describeGame).reverse();
+    },
+    recent() {
+      return recent.filter((entry) => games.has(entry.gameId));
     },
     get(id) {
       const game = games.get(id);

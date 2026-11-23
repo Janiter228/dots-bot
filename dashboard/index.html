@@ -101,6 +101,9 @@
     .auth-entry { display: flex; gap: .4rem; margin-top: .35rem; }
     .auth-entry input { width: 100%; min-width: 0; }
     .table-shell { max-height: 26rem; overflow: auto; }
+    .recent { margin-top: 1rem; }
+    .recent .table-shell { max-height: 15rem; }
+    .recent td:first-child { max-width: 18rem; white-space: normal; overflow-wrap: anywhere; }
     table { border-collapse: collapse; width: 100%; text-align: left; font-variant-numeric: tabular-nums; }
     th, td { padding: .55rem .75rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
     th { position: sticky; top: 0; color: var(--muted); background: var(--panel); font-size: .82rem; }
@@ -148,6 +151,14 @@
       </dl>
       <button id="copy-address" type="button">Скопировать адрес бота</button>
       <span id="copy-message" class="caption" role="status"></span>
+    </section>
+    <section id="recent" class="box recent" aria-labelledby="recent-title" hidden>
+      <header class="box-head"><h2 id="recent-title">Последние ходы</h2><span class="caption">Все партии</span></header>
+      <p id="recent-empty" class="box-body caption">Ходы появятся после первого ответа бота.</p>
+      <p id="recent-message" class="box-body notice" role="status" hidden></p>
+      <div id="recent-table" class="table-shell" tabindex="0" aria-label="Таблица последних ходов" hidden>
+        <table><thead><tr><th scope="col">Партия</th><th scope="col">№</th><th scope="col">Цвет бота</th><th scope="col">Соперник</th><th scope="col">Ход бота</th><th scope="col">Получен</th></tr></thead><tbody id="recent-rows"></tbody></table>
+      </div>
     </section>
     <div class="workspace">
       <article class="box" aria-labelledby="game-title">
@@ -210,6 +221,7 @@
     let token = '';
     let authenticated = false;
     let games = [];
+    let recentSignature;
     let selected = null;
     let game = null;
     let statusRequest;
@@ -332,6 +344,41 @@
       byId('logout').hidden = !value;
       byId('filters').hidden = !value;
       byId('games-summary').hidden = !value;
+      byId('recent').hidden = !value;
+    }
+
+    function renderRecent(moves) {
+      byId('recent-table').hidden = !moves.length;
+      byId('recent-empty').hidden = Boolean(moves.length);
+      const signature = JSON.stringify(moves);
+      if (signature === recentSignature) return;
+      recentSignature = signature;
+      const rows = document.createDocumentFragment();
+      for (const record of moves) {
+        const row = document.createElement('tr');
+        const reply = coord(moveCoord(record.move)) + (record.fallback ? ' · запасной' : '');
+        for (const value of [record.gameId, record.moveNo, colors[record.you], coord(record.last), reply, date(record.receivedAt)]) {
+          const cell = document.createElement('td');
+          cell.textContent = value;
+          row.append(cell);
+        }
+        row.cells[2].className = record.you;
+        rows.append(row);
+      }
+      byId('recent-rows').replaceChildren(rows);
+    }
+
+    async function refreshRecent(options) {
+      try {
+        const moves = await fetchJson('/api/recent-moves', options);
+        if (options.signal.aborted) return;
+        renderRecent(moves);
+        notice('recent-message', '');
+      } catch {
+        if (options.signal.aborted) return;
+        byId('recent-empty').hidden = true;
+        notice('recent-message', 'Последние ходы сейчас недоступны.');
+      }
     }
 
     function clearGames() {
@@ -345,6 +392,8 @@
       byId('mode-filter').value = '';
       byId('color-filter').value = '';
       resetReplay();
+      renderRecent([]);
+      notice('recent-message', '');
       renderGames();
       renderGame();
     }
@@ -355,11 +404,13 @@
       const controller = new AbortController();
       gamesRequest = controller;
       const options = { signal: controller.signal, headers: { Authorization: `Bearer ${token}` } };
+      let recentRequest;
       try {
         const data = await fetchJson('/api/games', options);
         if (controller.signal.aborted) return;
         games = data;
         setAuthenticated(true);
+        recentRequest = refreshRecent(options);
         const items = filteredGames();
         selectAvailable(items);
         renderGames();
@@ -383,6 +434,7 @@
         if (!game) renderGame();
         notice('game-message', error.status === 404 ? 'Эта партия уже недоступна. Список обновится.' : 'История сейчас недоступна. Попробуйте обновить панель.');
       } finally {
+        await recentRequest;
         if (gamesRequest === controller) gamesRequest = null;
       }
     }
