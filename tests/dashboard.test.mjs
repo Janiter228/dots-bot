@@ -1,4 +1,6 @@
 import { request } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { runInNewContext } from 'node:vm';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BOT_VERSION } from '../bot/index.js';
@@ -109,6 +111,83 @@ async function jsonOk(response) {
   assert.equal(response.headers.get('cache-control'), 'no-store');
   return response.json();
 }
+
+test('новая песочница на меньшем поле пересчитывает первый ход', async (t) => {
+  const port = await start(t, { dashboardToken: TOKEN });
+  const first = {
+    gameId: 'sandbox', moveNo: 1, you: 'red', field: { width: 7, height: 7 },
+    points: { red: [], blue: [] }, dead: { red: [], blue: [] }, last: null,
+  };
+  assert.deepEqual(await jsonOk(await move(port, first)), { x: 3, y: 3 });
+  await jsonOk(await move(port, {
+    ...first, moveNo: 3, points: { red: [[3, 3]], blue: [[0, 0]] }, last: [0, 0],
+  }));
+
+  const second = { ...first, field: { width: 3, height: 3 } };
+  const reply = await jsonOk(await move(port, second));
+  assert.deepEqual(reply, { x: 1, y: 1 });
+  assert.deepEqual(await jsonOk(await move(port, second)), reply);
+
+  const list = await jsonOk(await gamesApi(port));
+  assert.deepEqual(list.map(({ id }) => id), ['sandbox#2', 'sandbox']);
+  assert.deepEqual(list.map(({ field }) => field), [second.field, first.field]);
+  assert.ok(list.every(({ active, startedAt, lastActivityAt }) => active && startedAt <= lastActivityAt));
+  const original = await jsonOk(await gamesApi(port, '/api/games/sandbox'));
+  const restarted = await jsonOk(await gamesApi(port, '/api/games/sandbox%232'));
+  assert.deepEqual(original.moves.map(({ moveNo }) => moveNo), [1, 3]);
+  assert.deepEqual(restarted.moves.map(({ moveNo }) => moveNo), [1, 1]);
+  assert.deepEqual(restarted.snapshot.points, second.points);
+  assert.equal((await jsonOk(await api(port, '/api/status'))).errors, 0);
+  const recent = await jsonOk(await gamesApi(port, '/api/recent-moves'));
+  assert.deepEqual(recent.map(({ sessionId, moveNo }) => [sessionId, moveNo]), [
+    ['sandbox#2', 1], ['sandbox', 3], ['sandbox', 1],
+  ]);
+});
+
+test('изменение позиции при том же номере и уменьшение числа точек открывают новые сессии', async (t) => {
+  const port = await start(t, { dashboardToken: TOKEN });
+  const initial = { gameId: 'sandbox', moveNo: 1, points: { red: [], blue: [] }, last: null };
+  const first = await jsonOk(await move(port, initial));
+  const changed = { ...initial, points: { red: [[first.x, first.y]], blue: [] }, last: [first.x, first.y] };
+  assert.notDeepEqual(await jsonOk(await move(port, changed)), first);
+  assert.deepEqual(await jsonOk(await move(port, { ...initial, moveNo: 3 })), first);
+  const list = await jsonOk(await gamesApi(port));
+  assert.deepEqual(list.map(({ id }) => id), ['sandbox#3', 'sandbox#2', 'sandbox']);
+});
+
+test('на границе лимита сессий сохраняется старая активная партия', async (t) => {
+  let now = 100_000;
+  t.mock.method(Date, 'now', () => now);
+  const port = await start(t, { dashboardToken: TOKEN });
+  const initial = { moveNo: 1, points: { red: [], blue: [] }, last: null };
+  const keep = await jsonOk(await move(port, { ...initial, gameId: 'keep' }));
+  now += 1;
+  await jsonOk(await move(port, { ...initial, gameId: 'sandbox' }));
+  now += 30_000;
+  assert.deepEqual(await jsonOk(await move(port, { ...initial, gameId: 'keep' })), keep);
+  assert.equal((await jsonOk(await gamesApi(port, '/api/games/sandbox'))).active, false);
+  for (let width = 6; width < 25; width++) {
+    await jsonOk(await move(port, { ...initial, gameId: 'sandbox', field: { width, height: 4 } }));
+  }
+  const list = await jsonOk(await gamesApi(port));
+  assert.equal(list.length, 20);
+  assert.equal(list[0].id, 'sandbox#20');
+  assert.ok(list.some((item) => item.id === 'keep' && item.active));
+  assert.equal((await gamesApi(port, '/api/games/sandbox')).status, 404);
+});
+
+test('панель удерживает ручной выбор, переключается при слежении и заменяет вытесненную сессию', async () => {
+  const page = await readFile(new URL('../dashboard/index.html', import.meta.url), 'utf8');
+  const script = page.match(/<script id="game-selection">([\s\S]*?)<\/script>/)[1];
+  const chooseSession = runInNewContext(`${script}\nchooseSession`);
+  const old = { id: 'sandbox', startedAt: 10, active: true };
+  const latest = { id: 'sandbox#2', startedAt: 20, active: true };
+  const games = [old, latest];
+  assert.equal(chooseSession(games, [latest], old.id, false), old.id);
+  assert.equal(chooseSession(games, games, old.id, true), latest.id);
+  assert.equal(chooseSession([latest], [latest], old.id, false), latest.id);
+  assert.equal(chooseSession(games, [old], null, true), old.id);
+});
 
 test('метрики открыты, а список и отдельная партия защищены токеном панели', async (t) => {
   const previous = process.env.DASHBOARD_TOKEN;
