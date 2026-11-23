@@ -1,0 +1,92 @@
+name: Проверка и деплой main
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dots-production
+  cancel-in-progress: false
+
+jobs:
+  test:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+    steps:
+      - name: Подготовить SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Обновить контейнер и проверить API
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy_key \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=15 -o ServerAliveInterval=15 \
+            -p "$DEPLOY_PORT" "root@$DEPLOY_HOST" \
+            "bash -s -- '$GITHUB_SHA'" <<'REMOTE'
+          set -euo pipefail
+          cd /root/dots-bot
+          target_sha="$1"
+          test -f .env
+          test "$(git branch --show-current)" = main
+          test -z "$(git status --porcelain)"
+          export GIT_TERMINAL_PROMPT=0
+          git fetch origin main
+          if [ "$(git rev-parse FETCH_HEAD)" != "$target_sha" ]; then
+            echo 'В main уже есть новый коммит; устаревший деплой пропущен.'
+            exit 0
+          fi
+          git merge --ff-only "$target_sha"
+          docker compose up -d --build
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --max-time 3 \
+              http://127.0.0.1:4003/v1/health; then
+              echo
+              echo "Деплой выполнен: $target_sha"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'API после деплоя недоступен.'
+          docker compose ps
+          exit 1
+          REMOTE
+
+      - name: Удалить SSH-ключ
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
