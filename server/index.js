@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BOT_VERSION } from '../bot/index.js';
@@ -13,6 +13,7 @@ const BODY_LIMIT_BYTES = 8 * 1024 * 1024;
 // Сбрасываем только кэш ходов; следующая позиция полностью задаётся запросом.
 const MOVE_CACHE_IDLE_MS = 10 * 1000;
 const MAX_CACHED_GAMES = 128;
+const MAX_CACHED_MOVES = 3000;
 
 function sendJson(res, statusCode, data) {
   res.writeHead(statusCode, {
@@ -170,6 +171,11 @@ function isLegalMove(move, request) {
     !request.points.blue.some(([x, y]) => `${x},${y}` === key);
 }
 
+function positionFingerprint({ you, field, points, dead }) {
+  const position = [you, field.width, field.height, points.red, points.blue, dead?.red ?? [], dead?.blue ?? []];
+  return createHash('sha256').update(JSON.stringify(position)).digest('base64');
+}
+
 export function createBotServer({
   botToken = process.env.BOT_TOKEN,
   dashboardToken = process.env.DASHBOARD_TOKEN,
@@ -178,6 +184,7 @@ export function createBotServer({
   gameLogs = createGameLogs({ directory: process.env.GAME_LOG_DIR, botVersion: BOT_VERSION }),
 } = {}) {
   const games = new Map();
+  let activityOrder = 0;
   const fallbackResponses = new WeakSet();
   const expectedAuthorization = dashboardToken && Buffer.from(`Bearer ${dashboardToken}`);
   return http.createServer(async (req, res) => {
@@ -256,6 +263,7 @@ export function createBotServer({
       const startedAt = performance.now();
       const mode = req.headers['x-arena-mode'];
       let position;
+      let session;
       let playedMove = null;
       let fallback = false;
       // Считаем время до отправки и переносим сбор истории за пределы ответа.
@@ -264,7 +272,7 @@ export function createBotServer({
         const status = res.statusCode;
         setImmediate(() => {
           try {
-            dashboard.record({ request: position, mode, move: playedMove, fallback, receivedAt, durationMs, status });
+            dashboard.record({ request: position, session, mode, move: playedMove, fallback, receivedAt, durationMs, status });
           } catch {
             dashboard.recordError();
           }
@@ -312,25 +320,49 @@ export function createBotServer({
 
       const { gameId, moveNo } = request;
       const now = Date.now();
-      for (const [id, game] of games) {
-        if (now - game.lastAccess < MOVE_CACHE_IDLE_MS) break;
-        games.delete(id);
+      for (const previous of games.values()) {
+        if (now - previous.session.lastActivityAt < MOVE_CACHE_IDLE_MS) break;
+        previous.moves.clear();
       }
-      // Запросы обрабатываются одним процессом, а выбор хода синхронен.
-      const game = games.get(gameId) ?? { moves: new Map() };
-      game.lastAccess = now;
+      const fingerprint = positionFingerprint(request);
+      const { width, height } = request.field;
+      const pointCount = request.points.red.length + request.points.blue.length;
+      let game = games.get(gameId);
+      let entry = game?.moves.get(moveNo);
+      const exact = entry?.fingerprint === fingerprint ||
+        (game?.lastMoveNo === moveNo && game.lastFingerprint === fingerprint);
+      if (!game || (!exact && (moveNo <= game.lastMoveNo || pointCount < game.pointCount ||
+          width !== game.session.field.width || height !== game.session.field.height))) {
+        let number = game?.number ?? 0;
+        let id;
+        do {
+          number += 1;
+          id = number === 1 ? gameId : `${gameId}#${number}`;
+        } while (dashboard.hasSession(id) || Array.from(games.values()).some((current) => current.session.id === id));
+        game = { number, session: { id, gameId, startedAt: now, field: { width, height } }, moves: new Map() };
+        entry = undefined;
+      }
+      session = game.session;
+      session.lastActivityAt = now;
+      session.activityOrder = ++activityOrder;
+      if (!exact) {
+        game.lastMoveNo = moveNo;
+        game.lastFingerprint = fingerprint;
+        game.pointCount = pointCount;
+      }
       games.delete(gameId);
       games.set(gameId, game);
       if (games.size > MAX_CACHED_GAMES) games.delete(games.keys().next().value);
-      const cachedMove = game.moves.get(moveNo);
-      if (cachedMove) {
-        if (isLegalMove(cachedMove, request)) {
-          playedMove = cachedMove;
-          fallback = fallbackResponses.has(cachedMove);
-          sendJson(res, 200, cachedMove);
-        } else {
-          sendError(res, 409, 'conflicting_position', 'Сохранённый ход недопустим для повторно переданной позиции');
-        }
+
+      if (!entry) {
+        entry = { fingerprint };
+        game.moves.set(moveNo, entry);
+        if (game.moves.size > MAX_CACHED_MOVES) game.moves.delete(game.moves.keys().next().value);
+      }
+      if (entry.response) {
+        playedMove = entry.response;
+        fallback = fallbackResponses.has(playedMove);
+        sendJson(res, 200, playedMove);
         return;
       }
 
@@ -366,10 +398,12 @@ export function createBotServer({
         sendError(res, 409, 'no_free_moves', 'На поле не осталось свободных пересечений');
         return;
       }
-      const response = { x: move.x, y: move.y };
+      // Параллельный точный повтор использует первый готовый ответ этого хода.
+      const response = entry.response ?? { x: move.x, y: move.y };
+      if (entry.response) fallback = fallbackResponses.has(response);
       playedMove = response;
       if (fallback) fallbackResponses.add(response);
-      game.moves.set(moveNo, response);
+      entry.response = response;
       sendJson(res, 200, response);
       return;
     }
