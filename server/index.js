@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { BOT_VERSION } from '../bot/index.js';
 import { computeMove } from './compute-move.js';
 import { createDashboard, serveDashboardFile } from './dashboard.js';
+import { createDashboardAccess } from './dashboard-access.js';
 
 const PORT = Number(process.env.PORT || 4003);
 const BODY_LIMIT_BYTES = 8 * 1024 * 1024;
@@ -35,14 +36,14 @@ function addCorsHeaders(req, res) {
   res.setHeader('Vary', 'Origin');
 }
 
-async function readJson(req) {
+async function readJson(req, limit = BODY_LIMIT_BYTES) {
   const chunks = [];
   let totalBytes = 0;
 
   for await (const chunk of req) {
     totalBytes += chunk.length;
-    if (totalBytes > BODY_LIMIT_BYTES) {
-      const error = new Error('Размер запроса превышает 8 МБ');
+    if (totalBytes > limit) {
+      const error = new Error(`Размер запроса превышает ${limit === BODY_LIMIT_BYTES ? '8 МБ' : `${limit} байт`}`);
       error.statusCode = 413;
       error.code = 'body_too_large';
       throw error;
@@ -170,26 +171,62 @@ function isLegalMove(move, request) {
 export function createBotServer({
   botToken = process.env.BOT_TOKEN,
   dashboardToken = process.env.DASHBOARD_TOKEN,
+  dashboardAccessTokenHash = process.env.DASHBOARD_ACCESS_TOKEN_HASH,
+  dashboardAccessPasswordHash = process.env.DASHBOARD_ACCESS_PASSWORD_HASH,
   serveDashboard = process.env.SERVE_DASHBOARD !== '0',
   dashboard = createDashboard(),
 } = {}) {
   const games = new Map();
   const fallbackResponses = new WeakSet();
   const expectedAuthorization = dashboardToken && Buffer.from(`Bearer ${dashboardToken}`);
+  const dashboardAccess = createDashboardAccess({
+    tokenHash: dashboardAccessTokenHash,
+    passwordHash: dashboardAccessPasswordHash,
+  });
+  const passwordAccess = serveDashboard && dashboardAccess.enabled;
   return http.createServer(async (req, res) => {
     const rawPath = (req.url || '/').split('?', 1)[0];
     if (!rawPath.startsWith('/v1/')) {
+      if (passwordAccess && req.method === 'POST' &&
+          (rawPath === '/api/dashboard-session' || rawPath === '/api/dashboard-session/logout')) {
+        const contentType = (req.headers['content-type'] ?? '').split(';', 1)[0].trim().toLowerCase();
+        if (contentType !== 'application/json') {
+          sendError(res, 415, 'unsupported_media_type', 'Ожидается Content-Type: application/json');
+          return;
+        }
+        if (rawPath.endsWith('/logout')) {
+          dashboardAccess.signOut(req, res);
+          sendJson(res, 200, { ok: true });
+          return;
+        }
+        let body;
+        try {
+          body = await readJson(req, 1024);
+        } catch (error) {
+          sendError(res, error.statusCode ?? 400, error.code ?? 'invalid_request', 'Не удалось прочитать запрос');
+          return;
+        }
+        const status = dashboardAccess.signIn(req, res, body?.password);
+        if (status === 200) sendJson(res, 200, { ok: true });
+        else if (status === 429) sendError(res, 429, 'too_many_attempts', 'Слишком много попыток');
+        else sendError(res, 401, 'unauthorized', 'Неверный пароль');
+        return;
+      }
       if (req.method === 'GET' && rawPath === '/api/status') {
         sendJson(res, 200, dashboard.status(BOT_VERSION));
         return;
       }
       if (req.method === 'GET' && (rawPath === '/api/recent-moves' || rawPath === '/api/games' || rawPath.startsWith('/api/games/'))) {
-        if (!expectedAuthorization) {
+        if (!expectedAuthorization && !passwordAccess) {
           sendError(res, 403, 'forbidden', 'Чтобы открыть партии, задайте DASHBOARD_TOKEN на сервере');
           return;
         }
-        const authorization = Buffer.from(req.headers.authorization || '');
-        if (authorization.length !== expectedAuthorization.length || !timingSafeEqual(authorization, expectedAuthorization)) {
+        const authorization = req.headers.authorization ?? '';
+        const supplied = Buffer.from(authorization);
+        const matchesBearer = expectedAuthorization && supplied.length === expectedAuthorization.length &&
+          timingSafeEqual(supplied, expectedAuthorization);
+        const matchesProject = passwordAccess && !authorization && dashboardAccess.hasSession(req);
+        if (!matchesBearer && !matchesProject) {
           sendError(res, 401, 'unauthorized', 'Введите действующий токен панели');
           return;
         }
@@ -217,7 +254,7 @@ export function createBotServer({
         sendError(res, 404, 'not_found', 'Партия не найдена');
         return;
       }
-      if (serveDashboard && await serveDashboardFile(req, res, rawPath)) return;
+      if (serveDashboard && await serveDashboardFile(req, res, rawPath, passwordAccess)) return;
       sendError(res, 404, 'not_found', 'Маршрут не найден');
       return;
     }
@@ -385,6 +422,11 @@ const isMainModule = process.argv[1] &&
   fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 
 if (isMainModule) {
+  try {
+    process.loadEnvFile(fileURLToPath(new URL('.env', import.meta.url)));
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
   const server = createBotServer();
   const useColor = !('NO_COLOR' in process.env) && Boolean(process.stdout.isTTY);
   const paint = (text, code) => useColor ? `\x1b[${code}m${text}\x1b[0m` : text;
@@ -412,6 +454,8 @@ if (isMainModule) {
     line('Информация', 'GET  /v1/info');
     line('Ход бота', 'POST /v1/move');
     line('Авторизация', process.env.BOT_TOKEN ? 'Включена · Bearer-токен' : 'Без токена');
+    line('Панель', process.env.DASHBOARD_TOKEN || process.env.DASHBOARD_ACCESS_TOKEN_HASH
+      ? 'Доступ к партиям защищён' : 'Задайте DASHBOARD_TOKEN');
     console.log('');
     line('Играть', 'Откройте web/index.html в браузере');
     line('Остановить', paint('Ctrl+C', '1;93'));
