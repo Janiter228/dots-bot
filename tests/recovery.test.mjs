@@ -30,7 +30,7 @@ async function setup(t) {
   };
 }
 
-test('после десяти секунд без запросов партия рассчитывается заново по актуальной позиции', async (t) => {
+test('после паузы изменённая позиция с тем же номером хода рассчитывается заново', async (t) => {
   const client = await setup(t);
   const first = await client.move('reload');
   assert.equal(first.status, 200);
@@ -43,7 +43,7 @@ test('после десяти секунд без запросов партия 
   assert.deepEqual(await client.move('reload', [[1, 1]]), resumed);
 });
 
-test('точные повторы продлевают жизнь кэша, изменённая позиция пересчитывается', async (t) => {
+test('точный повтор после паузы использует кэш, изменённая позиция пересчитывается', async (t) => {
   const client = await setup(t);
   const first = await client.move('active');
   client.advance(IDLE_MS - 1);
@@ -54,7 +54,7 @@ test('точные повторы продлевают жизнь кэша, из
   assert.notDeepEqual(changed.body, first.body);
 });
 
-test('сброс простаивающей партии не сбрасывает кэш активной партии', async (t) => {
+test('новая позиция одной партии не сбрасывает кэш другой', async (t) => {
   const client = await setup(t);
   const idle = await client.move('idle');
   const active = await client.move('active');

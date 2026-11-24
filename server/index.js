@@ -11,9 +11,6 @@ import { createGameLogs } from './game-logs.js';
 
 const PORT = Number(process.env.PORT || 4003);
 const BODY_LIMIT_BYTES = 8 * 1024 * 1024;
-// После паузы клиент мог начать новую партию с прежним gameId.
-// Сбрасываем только кэш ходов; следующая позиция полностью задаётся запросом.
-const MOVE_CACHE_IDLE_MS = 10 * 1000;
 const MAX_CACHED_GAMES = 128;
 const MAX_CACHED_MOVES = 3000;
 
@@ -186,6 +183,7 @@ export function createBotServer({
   gameLogs = createGameLogs({ directory: process.env.GAME_LOG_DIR, botVersion: BOT_VERSION }),
 } = {}) {
   const games = new Map();
+  const endedBeforeMove = new Set();
   let activityOrder = 0;
   const fallbackResponses = new WeakSet();
   const expectedAuthorization = dashboardToken && Buffer.from(`Bearer ${dashboardToken}`);
@@ -294,6 +292,35 @@ export function createBotServer({
       return;
     }
 
+    if (req.method === 'POST' && url.pathname === '/v1/game/end') {
+      if (botToken && req.headers.authorization !== `Bearer ${botToken}`) {
+        sendError(res, 401, 'unauthorized', 'Неверный или отсутствующий токен');
+        return;
+      }
+      let body;
+      try {
+        body = await readJson(req, 16 * 1024);
+      } catch (error) {
+        sendError(res, error.statusCode || 400, error.code || 'invalid_request', error.message);
+        return;
+      }
+      const gameId = body?.gameId;
+      if (typeof gameId !== 'string' || !gameId.length) {
+        sendError(res, 400, 'bad_request', 'gameId должен быть непустой строкой');
+        return;
+      }
+      const game = games.get(gameId);
+      if (game) {
+        game.session.endedAt ??= Date.now();
+      } else {
+        // Уведомление браузера может прийти раньше первого запроса хода.
+        endedBeforeMove.add(gameId);
+        if (endedBeforeMove.size > MAX_CACHED_GAMES) endedBeforeMove.delete(endedBeforeMove.values().next().value);
+      }
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
     if (req.method === 'POST' && url.pathname === '/v1/move') {
       const receivedAt = Date.now();
       const startedAt = performance.now();
@@ -358,9 +385,9 @@ export function createBotServer({
 
       const { gameId, moveNo } = request;
       const now = Date.now();
-      for (const previous of games.values()) {
-        if (now - previous.session.lastActivityAt < MOVE_CACHE_IDLE_MS) break;
-        previous.moves.clear();
+      if (endedBeforeMove.has(gameId)) {
+        sendError(res, 409, 'game_ended', 'Партия уже завершена');
+        return;
       }
       const fingerprint = positionFingerprint(request);
       const { width, height } = request.field;
@@ -375,6 +402,7 @@ export function createBotServer({
           infinite !== (game.session.field.infinite === true) ||
           sessionField.width !== game.session.field.width || sessionField.height !== game.session.field.height))) {
         let number = game?.number ?? 0;
+        if (game) game.session.endedAt ??= now;
         let id;
         do {
           number += 1;
@@ -382,6 +410,10 @@ export function createBotServer({
         } while (dashboard.hasSession(id) || Array.from(games.values()).some((current) => current.session.id === id));
         game = { number, session: { id, gameId, startedAt: now, field: sessionField }, moves: new Map() };
         entry = undefined;
+      }
+      if (game.session.endedAt !== undefined && !entry?.response) {
+        sendError(res, 409, 'game_ended', 'Партия уже завершена');
+        return;
       }
       session = game.session;
       session.lastActivityAt = now;
@@ -436,6 +468,7 @@ export function createBotServer({
       }
       if (res.destroyed || cancellation.signal.aborted) return;
       if (!move) {
+        session.endedAt ??= Date.now();
         sendError(res, 409, 'no_free_moves', 'На поле не осталось свободных пересечений');
         return;
       }
@@ -445,11 +478,14 @@ export function createBotServer({
       playedMove = response;
       if (fallback) fallbackResponses.add(response);
       entry.response = response;
+      if (!infinite && pointCount + 1 === width * height && game.lastMoveNo === moveNo) {
+        session.endedAt ??= Date.now();
+      }
       sendJson(res, 200, response);
       return;
     }
 
-    if (req.method === 'POST' && ['/v1/game/start', '/v1/game/end'].includes(url.pathname)) {
+    if (req.method === 'POST' && url.pathname === '/v1/game/start') {
       sendError(res, 404, 'not_found', 'Маршрут не найден');
       return;
     }

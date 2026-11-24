@@ -131,7 +131,8 @@ test('новая песочница на меньшем поле пересчи�
   const list = await jsonOk(await gamesApi(port));
   assert.deepEqual(list.map(({ id }) => id), ['sandbox#2', 'sandbox']);
   assert.deepEqual(list.map(({ field }) => field), [second.field, first.field]);
-  assert.ok(list.every(({ active, startedAt, lastActivityAt }) => active && startedAt <= lastActivityAt));
+  assert.deepEqual(list.map(({ active }) => active), [true, false]);
+  assert.ok(list.every(({ startedAt, lastActivityAt }) => startedAt <= lastActivityAt));
   const original = await jsonOk(await gamesApi(port, '/api/games/sandbox'));
   const restarted = await jsonOk(await gamesApi(port, '/api/games/sandbox%232'));
   assert.deepEqual(original.moves.map(({ moveNo }) => moveNo), [1, 3]);
@@ -165,7 +166,7 @@ test('на границе лимита сессий сохраняется ст�
   await jsonOk(await move(port, { ...initial, gameId: 'sandbox' }));
   now += 30_000;
   assert.deepEqual(await jsonOk(await move(port, { ...initial, gameId: 'keep' })), keep);
-  assert.equal((await jsonOk(await gamesApi(port, '/api/games/sandbox'))).active, false);
+  assert.equal((await jsonOk(await gamesApi(port, '/api/games/sandbox'))).active, true);
   for (let width = 6; width < 25; width++) {
     await jsonOk(await move(port, { ...initial, gameId: 'sandbox', field: { width, height: 4 } }));
   }
@@ -174,6 +175,47 @@ test('на границе лимита сессий сохраняется ст�
   assert.equal(list[0].id, 'sandbox#20');
   assert.ok(list.some((item) => item.id === 'keep' && item.active));
   assert.equal((await gamesApi(port, '/api/games/sandbox')).status, 404);
+});
+
+test('долгая пауза сохраняет партию и кэш, сброс страницы закрывает её явно', async (t) => {
+  let now = 100_000;
+  t.mock.method(Date, 'now', () => now);
+  const port = await start(t, { botToken: TOKEN, dashboardToken: TOKEN });
+  const auth = { Authorization: `Bearer ${TOKEN}` };
+  const first = { gameId: 'web-old', moveNo: 1, field: { width: 3, height: 3 },
+    points: { red: [], blue: [] }, last: null };
+  const opening = await jsonOk(await move(port, first, auth));
+  now += 3_600_000;
+  assert.equal((await jsonOk(await gamesApi(port, '/api/games/web-old'))).active, true);
+  assert.deepEqual(await jsonOk(await move(port, { ...first, moveTimeoutMs: 1 }, auth)), opening);
+  assert.equal((await jsonOk(await api(port, '/api/status'))).fallbackMoves, 0);
+  const next = { ...first, moveNo: 3, points: { red: [[opening.x, opening.y]], blue: [[0, 0]] } };
+  await jsonOk(await move(port, next, auth));
+  assert.deepEqual((await jsonOk(await gamesApi(port))).map(({ id, active }) => [id, active]), [['web-old', true]]);
+
+  const end = (gameId, headers = auth) => api(port, '/v1/game/end', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ gameId }),
+  });
+  assert.equal((await end('web-old', {})).status, 401);
+  await jsonOk(await end('web-old'));
+  await jsonOk(await end('web-old'));
+  assert.equal((await move(port, { ...next, moveNo: 5 }, auth)).status, 409);
+  await jsonOk(await move(port, { ...first, gameId: 'web-reloaded' }, auth));
+  assert.deepEqual((await jsonOk(await gamesApi(port))).map(({ id, active }) => [id, active]),
+    [['web-reloaded', true], ['web-old', false]]);
+
+  await jsonOk(await end('reloaded-during-first-move'));
+  assert.equal((await move(port, { ...first, gameId: 'reloaded-during-first-move' }, auth)).status, 409);
+});
+
+test('последняя свободная клетка завершает сессию, а повтор хода остаётся доступен', async (t) => {
+  const port = await start(t, { dashboardToken: TOKEN });
+  const final = { gameId: 'full', moveNo: 1, field: { width: 1, height: 1 },
+    points: { red: [], blue: [] }, last: null };
+  const reply = await jsonOk(await move(port, final));
+  assert.deepEqual(reply, { x: 0, y: 0 });
+  assert.equal((await jsonOk(await gamesApi(port, '/api/games/full'))).active, false);
+  assert.deepEqual(await jsonOk(await move(port, final)), reply);
 });
 
 test('панель удерживает ручной выбор, переключается при слежении и заменяет вытесненную сессию', async () => {
