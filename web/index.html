@@ -380,10 +380,20 @@
       && x >= 0 && y >= 0 && x < game.n && y < game.n && !game.owners[y * game.n + x];
   }
 
+  function notifyGameEnd(game) {
+    if (!game?.remoteStarted) return;
+    void fetch(`${game.address}/v1/game/end`, {
+      method: 'POST', keepalive: true,
+      headers: { 'Content-Type': 'application/json', ...headers(game.token) },
+      body: JSON.stringify({ gameId: game.id }),
+    }).catch(() => {});
+  }
+
   function finish(game, reason, winner) {
     const { red, blue } = game.stats.score;
     game.ended = true;
     game.end = { reason, winner: winner ?? (red === blue ? null : red > blue ? 'red' : 'blue') };
+    if (game === state) notifyGameEnd(game);
   }
 
   function advance(game, { index = -1, elapsed = null, spent = elapsed ?? 0, error = '', random = false }) {
@@ -514,6 +524,8 @@
     if (target < 0) return;
     restore(target);
     // После отката возникает новая ветка: сервер кэширует ответ по gameId и moveNo.
+    notifyGameEnd(state);
+    state.remoteStarted = false;
     state.id = newId();
     render();
   }
@@ -580,6 +592,7 @@
   }
 
   function startGame(options) {
+    if (!state?.ended) notifyGameEnd(state);
     pending?.abort();
     pending = review = hover = animation = null;
     stopPlayback();
@@ -662,6 +675,7 @@
         const [x, y] = coord(game, randomFree(game));
         move = { x, y };
       } else {
+        game.remoteStarted = true;
         move = await responseJson(await fetch(`${game.address}/v1/move`, {
           method: 'POST', headers: { 'Content-Type': 'application/json', ...headers(game.token) },
           body: JSON.stringify(requestBody(game)), signal,
@@ -1410,6 +1424,7 @@
         pending?.abort();
         pending = animation = review = null;
         stopPlayback();
+        if (!state.ended) notifyGameEnd(state);
         state = game;
         rebuildJournal();
         fitBoard();
@@ -1420,6 +1435,11 @@
         if (current !== importNumber) return;
         announce('fileStatus', error.name === 'SyntaxError' ? 'Не удалось прочитать JSON.' : error.message);
       }
+    });
+
+    // Сохранённая в bfcache страница может продолжить ту же партию.
+    document.defaultView?.addEventListener('pagehide', (event) => {
+      if (!event.persisted && !state?.ended) notifyGameEnd(state);
     });
 
     setupPointers();

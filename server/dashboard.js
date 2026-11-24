@@ -70,7 +70,6 @@ export async function serveDashboardFile(req, res, rawPath, passwordAccess = fal
 const MAX_GAMES = 20;
 const MAX_MOVES = 3000;
 const MAX_RECENT_MOVES = 10;
-const ACTIVE_MS = 30_000;
 const MODES = new Set(['check', 'practice', 'round']);
 const COLORS = ['red', 'blue'];
 
@@ -92,10 +91,10 @@ function compareActivity(a, b) {
   return a.session.lastActivityAt - b.session.lastActivityAt || a.session.activityOrder - b.session.activityOrder;
 }
 
-function describeGame(game, now) {
+function describeGame(game) {
   const { id, gameId, field, startedAt, lastActivityAt } = game.session;
   return {
-    id, gameId, field, startedAt, lastActivityAt, active: now - lastActivityAt < ACTIVE_MS,
+    id, gameId, field, startedAt, lastActivityAt, active: game.session.endedAt === undefined,
     mode: game.mode, you: game.snapshot.you,
     moveCount: game.moves.size, revision: game.sequence, lastMoveAt: game.lastMoveAt,
     score: game.snapshot.score,
@@ -145,8 +144,10 @@ export function createDashboard() {
       if (game.moves.size > MAX_MOVES) game.moves.delete(game.moves.keys().next().value);
       games.set(session.id, game);
       if (games.size > MAX_GAMES) {
-        // При одинаковом пороге активности самая давняя сессия неактивна первой.
-        const oldest = Array.from(games.values()).reduce((a, b) => compareActivity(a, b) <= 0 ? a : b);
+        const oldest = Array.from(games.values()).reduce((a, b) => {
+          const activeOrder = Number(a.session.endedAt === undefined) - Number(b.session.endedAt === undefined);
+          return (activeOrder || compareActivity(a, b)) <= 0 ? a : b;
+        });
         games.delete(oldest.session.id);
       }
 
@@ -168,8 +169,7 @@ export function createDashboard() {
       };
     },
     list() {
-      const now = Date.now();
-      return Array.from(games.values()).sort((a, b) => compareActivity(b, a)).map((game) => describeGame(game, now));
+      return Array.from(games.values()).sort((a, b) => compareActivity(b, a)).map(describeGame);
     },
     hasSession(id) {
       return games.has(id);
@@ -181,7 +181,7 @@ export function createDashboard() {
       const game = games.get(id);
       if (!game) return null;
       return {
-        ...describeGame(game, Date.now()),
+        ...describeGame(game),
         moves: Array.from(game.moves.values()),
         snapshot: game.snapshot,
       };
