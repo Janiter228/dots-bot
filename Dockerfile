@@ -12,4 +12,4 @@ COPY . .
 EXPOSE 4003
 
 # Запускаем сервер
-CMD ["npm", "start"]
+CMD ["node", "server/start.js"]

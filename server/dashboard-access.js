@@ -26,27 +26,37 @@ export function createDashboardAccess({ tokenHash, passwordHash }) {
     res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${value}; Path=/api; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`);
   }
 
+  function verifyPassword(res, password) {
+    if (!passwordConfig) return 503;
+    const now = Date.now();
+    if (now >= resetAttemptsAt) {
+      resetAttemptsAt = now + ATTEMPT_WINDOW_MS;
+      attempts = 0;
+    }
+    if (attempts >= ATTEMPT_LIMIT) {
+      res.setHeader('Retry-After', Math.ceil((resetAttemptsAt - now) / 1000));
+      return 429;
+    }
+    attempts++;
+    if (typeof password !== 'string' || !/^\d{4}$/.test(password)) return 401;
+    const [, salt, expected] = passwordConfig;
+    if (!timingSafeEqual(scryptSync(password, Buffer.from(salt, 'hex'), 32), Buffer.from(expected, 'hex'))) {
+      return 401;
+    }
+    return 200;
+  }
+
   return {
     enabled,
     hasSession(req) {
       return sessions.get(sessionKey(req)) > Date.now();
     },
+    passwordConfigured: Boolean(passwordConfig),
+    verifyPassword,
     signIn(req, res, password) {
+      const status = verifyPassword(res, password);
+      if (status !== 200) return status;
       const now = Date.now();
-      if (now >= resetAttemptsAt) {
-        resetAttemptsAt = now + ATTEMPT_WINDOW_MS;
-        attempts = 0;
-      }
-      if (attempts >= ATTEMPT_LIMIT) {
-        res.setHeader('Retry-After', Math.ceil((resetAttemptsAt - now) / 1000));
-        return 429;
-      }
-      attempts++;
-      if (typeof password !== 'string' || !/^\d{4}$/.test(password)) return 401;
-      const [, salt, expected] = passwordConfig;
-      if (!timingSafeEqual(scryptSync(password, Buffer.from(salt, 'hex'), 32), Buffer.from(expected, 'hex'))) {
-        return 401;
-      }
       for (const [key, expires] of sessions) {
         if (expires <= now) sessions.delete(key);
       }
@@ -80,23 +90,6 @@ export function addDashboardAccessControls(html) {
             </form>
           </dialog>
           <label id="follow-label"`
-  ).replace(
-    '(!token && !checkAvailability)',
-    '(!token && !authenticated && !checkAvailability)'
-  ).replace(
-    'error.status === 401 && !token',
-    'error.status === 401 && !token && !authenticated'
-  ).replace(
-    "byId('logout').addEventListener('click', () => {",
-    `byId('logout').addEventListener('click', async () => {
-      try {
-        await fetchJson('/api/dashboard-session/logout', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-        });
-      } catch {
-        notice('game-message', 'Не удалось выйти. Попробуйте ещё раз.');
-        return;
-      }`
   ).replace(
     '    schedule();\n    refreshGames(false, true);',
     `    const accessDialog = byId('project-access-dialog');
