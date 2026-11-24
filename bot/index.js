@@ -733,7 +733,8 @@ export function chooseMove(request) {
   const redCode = request.you === 'red' ? OUR_LIVE : ENEMY_LIVE;
   const moveAt = (index) => index < 0 ? null : { x: index % width, y: Math.floor(index / width) };
   const legal = findFreeIndex(board, width, height);
-  if (legal < 0 || request.points.red.length + request.points.blue.length === 0) {
+  if (legal < 0 || request.points.red.length + request.points.blue.length === 0
+      || (freeCount <= 1 && board.indexOf(EMPTY) === board.lastIndexOf(EMPTY))) {
     return moveAt(legal);
   }
 
@@ -764,7 +765,7 @@ export function chooseMove(request) {
   // если таймер не позволил проверить последствия размена.
   const directBlock = dangers.length === 1 ? blocks[0]?.index : undefined;
   const fallback = directBlock ?? attacks[0]?.index ?? blocks[0]?.index ?? safe;
-  if (performance.now() >= deadline || !board.some((value, index) => value === EMPTY && index !== legal)) {
+  if (performance.now() >= deadline) {
     return moveAt(fallback);
   }
 

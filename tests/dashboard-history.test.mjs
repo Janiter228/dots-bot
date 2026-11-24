@@ -92,3 +92,41 @@ test('история удаляет партии через сутки', async t
   assert.equal(dashboard.list().length, 0);
   assert.equal(createDashboard({ historyFile: file }).get(input.gameId), null);
 });
+
+test('панель сохраняет только домен соперника и показывает цвет бота', async t => {
+  const file = await historyFile(t);
+  const dashboard = createDashboard({ historyFile: file });
+  const api = await start(t, dashboard);
+  const opening = { ...input, you: 'blue' };
+  assert.equal((await api('/v1/move', post(opening))).status, 200);
+  assert.equal(dashboard.list()[0].title, input.gameId);
+  const url = 'https://Bot.Example.org:9443/v1/move?key=private-test';
+  assert.equal((await api('/v1/move', post({ ...opening, opponent: { url } }))).status, 200);
+  dashboard.flush();
+
+  const restored = createDashboard({ historyFile: file });
+  const [entry] = restored.list();
+  assert.equal(entry.id, input.gameId);
+  assert.equal(entry.title, 'bot.example.org · ' + input.gameId);
+  assert.equal(entry.opponentDomain, 'bot.example.org');
+  assert.equal(entry.you, 'blue');
+  assert.doesNotMatch(JSON.stringify(restored.get(entry.id)), /private-test|9443/);
+
+  assert.equal((await api('/v1/move', post({ ...opening, gameId: 'header' },
+    { 'X-Arena-Opponent-Domain': 'bot2.example.org' }))).status, 200);
+  assert.equal(dashboard.get('header').opponentDomain, 'bot2.example.org');
+});
+
+test('снимок после хода включает замкнутый контур, захват и новый счёт', async t => {
+  const dashboard = createDashboard();
+  const api = await start(t, dashboard);
+  const turn = { ...input, gameId: 'capture', moveNo: 8, you: 'blue',
+    points: { red: [[2, 2]], blue: [[1, 2], [2, 1], [3, 2]] } };
+  const response = await api('/v1/move', post(turn));
+  assert.deepEqual(await response.json(), { x: 2, y: 3 });
+  const game = await (await api('/api/games/capture', { headers: auth })).json();
+  assert.deepEqual(game.snapshot.dead.red, []);
+  assert.deepEqual(game.afterResponse.points.blue.at(-1), [2, 3]);
+  assert.deepEqual(game.afterResponse.dead.red, [[2, 2]]);
+  assert.deepEqual(game.afterResponse.score, { red: 0, blue: 1 });
+});

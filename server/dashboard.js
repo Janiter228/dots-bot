@@ -3,6 +3,7 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { addDashboardAccessControls } from './dashboard-access.js';
 import { fileURLToPath } from 'node:url';
+import { applyMove } from '../bot/index.js';
 
 const ROOT = fileURLToPath(new URL('../dashboard', import.meta.url));
 const ROOT_PREFIX = ROOT + path.sep;
@@ -68,7 +69,7 @@ export async function serveDashboardFile(req, res, rawPath, passwordAccess = fal
   return true;
 }
 
-const MAX_GAMES = 20;
+const MAX_GAMES = 40;
 const RETENTION_MS = 24 * 60 * 60 * 1000;
 const MAX_MOVES = 3000;
 const MAX_RECENT_MOVES = 10;
@@ -89,6 +90,52 @@ function readDead(dead, { width, height }) {
   ]));
 }
 
+function opponentHostname(...candidates) {
+  for (const value of candidates) {
+    if (typeof value !== 'string' || !value.trim() || value.length > 2048) continue;
+    const address = value.trim();
+    try {
+      const url = new URL(address.includes('://') ? address : `https://${address}`);
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) continue;
+      const authority = address.replace(/^https?:\/\//i, '').split(/[/?#]/, 1)[0];
+      if (!authority.includes('.') && !authority.startsWith('[') && !/^localhost(?::\d+)?$/i.test(authority)) continue;
+      const hostname = url.hostname.replace(/\.$/, '');
+      if (hostname === 'localhost' || hostname.startsWith('[') ||
+          (hostname.includes('.') && hostname.split('.').every(label =>
+            /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)))) return hostname;
+    } catch {
+      // Необязательное поле. Неверный адрес не меняет название партии.
+    }
+  }
+  return undefined;
+}
+
+function positionAfterResponse(snapshot) {
+  if (snapshot.status !== 200 || !snapshot.move) return null;
+  const { width, height } = snapshot.field;
+  if (width * height > 1_000_000) return null;
+  const board = new Uint8Array(width * height);
+  const index = ([x, y]) => y * width + x;
+  for (const [color, code] of [['red', 1], ['blue', 2]]) {
+    const dead = new Set(snapshot.dead[color].map(index));
+    for (const point of snapshot.points[color]) {
+      const at = index(point);
+      board[at] = code + (dead.has(at) ? 2 : 0);
+    }
+  }
+  const { x, y } = snapshot.move;
+  if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) || x < 0 || x >= width || y < 0 || y >= height) return null;
+  const color = snapshot.you === 'red' ? 1 : 2;
+  const result = applyMove(board, index([x, y]), width, height, color, 3 - color, undefined, 1);
+  if (!result) return null;
+  const points = { ...snapshot.points, [snapshot.you]: [...snapshot.points[snapshot.you], [x, y]] };
+  const dead = {
+    red: points.red.filter(point => result.board[index(point)] === 3),
+    blue: points.blue.filter(point => result.board[index(point)] === 4),
+  };
+  return { ...snapshot, points, dead, score: { red: dead.blue.length, blue: dead.red.length }, afterResponse: true };
+}
+
 function compareActivity(a, b) {
   return a.session.lastActivityAt - b.session.lastActivityAt || a.session.activityOrder - b.session.activityOrder;
 }
@@ -96,7 +143,8 @@ function compareActivity(a, b) {
 function describeGame(game) {
   const { id, gameId, field, startedAt, lastActivityAt } = game.session;
   return {
-    id, gameId, field, startedAt, lastActivityAt, active: game.session.endedAt === undefined,
+    id, gameId, title: game.opponentDomain ? `${game.opponentDomain} · ${id}` : id,
+    opponentDomain: game.opponentDomain ?? null, field, startedAt, lastActivityAt, active: game.session.endedAt === undefined,
     mode: game.mode, you: game.snapshot.you,
     moveCount: game.moves.size, revision: game.sequence, lastMoveAt: game.lastMoveAt,
     score: game.snapshot.score,
@@ -108,6 +156,7 @@ export function createDashboard({ historyFile } = {}) {
   const games = new Map();
   let recent = [];
   const deleted = new Map();
+  const responses = new WeakMap();
   let moves = 0;
   let totalMs = 0;
   let maxMs = 0;
@@ -194,7 +243,7 @@ export function createDashboard({ historyFile } = {}) {
   }
 
   return {
-    record({ request, session, mode, move, fallback, receivedAt, durationMs, status }) {
+    record({ request, session, mode, opponent, move, fallback, receivedAt, durationMs, status }) {
       lastRequestAt = Math.max(lastRequestAt ?? receivedAt, receivedAt);
       if (status === 200) {
         moves += 1;
@@ -218,6 +267,12 @@ export function createDashboard({ historyFile } = {}) {
       if (!game.snapshot || moveNo > game.snapshot.moveNo ||
           (moveNo === game.snapshot.moveNo && receivedAt >= game.snapshot.receivedAt)) {
         game.snapshot = { ...record, points: { red: points.red, blue: points.blue }, dead: readDead(request.dead, field) };
+      }
+      if (!game.opponentDomain) {
+        game.opponentDomain = opponentHostname(
+          request.opponentDomain, request.opponentUrl, request.opponentHost, request.opponent?.domain, request.opponent?.host,
+          request.opponent?.url, request.opponent?.address, request.opponent, opponent,
+        );
       }
       if (arenaMode !== 'unknown') game.mode = arenaMode;
       game.lastMoveAt = Math.max(game.lastMoveAt ?? receivedAt, receivedAt);
@@ -298,10 +353,12 @@ export function createDashboard({ historyFile } = {}) {
       clean();
       const game = games.get(id);
       if (!game) return null;
+      if (!responses.has(game.snapshot)) responses.set(game.snapshot, positionAfterResponse(game.snapshot));
       return {
         ...describeGame(game),
         moves: Array.from(game.moves.values()),
         snapshot: game.snapshot,
+        afterResponse: responses.get(game.snapshot),
       };
     },
   };

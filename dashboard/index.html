@@ -92,7 +92,11 @@
     .mode[data-mode="round"] { color: var(--accent); border-color: var(--accent); }
     .mode[data-mode="practice"] { color: var(--green); border-color: var(--green); }
     .mode[data-mode="check"] { color: var(--amber); border-color: var(--amber); }
-    .tabs { padding: 0; margin: .65rem 0 0; list-style: none; display: grid; gap: .35rem; }
+    .tabs { padding: .15rem .35rem .15rem .15rem; margin: .65rem 0 0; list-style: none; display: grid; gap: .45rem; max-height: 30rem; overflow: auto; }
+    .filters .game-search { grid-column: 1 / -1; }
+    .game-search input { width: 100%; min-width: 0; }
+    .game-link .game-title { font-weight: 700; }
+    .game-link .game-details { margin-block: .2rem .35rem; }
     .game-link { width: 100%; text-align: left; overflow-wrap: anywhere; }
     .game-link span { display: block; }
     .game-link .session-badges { display: flex; gap: .35rem; flex-wrap: wrap; }
@@ -184,7 +188,7 @@
         </div>
         <div id="game-detail" hidden>
           <div class="box-body caption legend" aria-label="Обозначения поля">
-            <span class="red">● Красные</span><span class="blue">● Синие</span><span>⊗ Мёртвая точка</span>
+            <label><input type="checkbox" id="board-links" checked> Связи точек</label><span class="red">● Красные</span><span class="blue">● Синие</span><span>⊗ Мёртвая точка</span>
             <span><i class="last"></i> Соперник</span><span><i class="played"></i> Ход бота</span>
           </div>
           <div class="box-body replay">
@@ -209,6 +213,8 @@
           </form>
           <label id="follow-label" class="caption follow-session" hidden><input id="follow-latest" type="checkbox" checked> Следить за последней</label>
           <div id="filters" class="filters" hidden>
+            <label class="caption game-search">Поиск партии<input type="search" id="game-search" placeholder="Домен или ID" autocomplete="off"></label>
+            <label class="caption">Состояние<select id="state-filter"><option value="">Все</option><option value="active">Идут</option><option value="ended">Завершены</option></select></label>
             <label class="caption">Режим<select id="mode-filter"><option value="">Все</option><option value="check">Проверка</option><option value="practice">Тренировка</option><option value="round">Раунд</option><option value="unknown">Неизвестен</option></select></label>
             <label class="caption">Цвет бота<select id="color-filter"><option value="">Любой</option><option value="red">Красный</option><option value="blue">Синий</option></select></label>
           </div>
@@ -229,6 +235,54 @@
       const newestActive = candidates.reduce((newest, item) =>
         item.active && (!newest || item.startedAt > newest.startedAt) ? item : newest, null);
       return (newestActive ?? candidates[0])?.id ?? null;
+    }
+  </script>
+  <script id="board-replay">
+    function replayPlacements(snapshot, frames) {
+      const known = new Map();
+      const key = point => point.join(',');
+      function observe(point, moveNo) {
+        const id = key(point);
+        known.set(id, Math.min(known.get(id) ?? Infinity, moveNo));
+      }
+      const placedColors = new Map();
+      for (const color of ['red', 'blue']) {
+        for (const point of snapshot.points[color]) placedColors.set(key(point), color);
+      }
+      for (const frame of frames) {
+        if (frame.status !== 200 || !frame.move) continue;
+        const point = [frame.move.x, frame.move.y];
+        if (placedColors.get(key(point)) === frame.you) observe(point, frame.moveNo);
+      }
+      for (const frame of frames) {
+        if (frame.last && placedColors.has(key(frame.last))) observe(frame.last, frame.moveNo - 1);
+      }
+      return Object.fromEntries(['red', 'blue'].map(color => {
+        let presentBy = snapshot.moveNo - 1;
+        const placements = snapshot.points[color].map(point => ({ point })).reverse();
+        for (const entry of placements) {
+          presentBy = Math.min(presentBy, known.get(key(entry.point)) ?? Infinity);
+          entry.presentBy = presentBy;
+        }
+        return [color, placements.reverse()];
+      }));
+    }
+
+    function liveConnections(points, dead) {
+      const key = (x, y) => `${x},${y}`;
+      const unavailable = new Set(dead.map(point => key(...point)));
+      const live = new Set(points.map(point => key(...point)).filter(id => !unavailable.has(id)));
+      const edges = [];
+      for (const [x, y] of points) {
+        if (!live.has(key(x, y))) continue;
+        for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [-1, 1]]) {
+          if (!live.has(key(x + dx, y + dy))) continue;
+          // Диагональ лишняя, если те же точки уже соединены через соседний угол.
+          if (dx && dy && (live.has(key(x + dx, y)) || live.has(key(x, y + dy)))) continue;
+          edges.push([[x, y], [x + dx, y + dy]]);
+        }
+      }
+      return edges;
     }
   </script>
   <script>
@@ -258,6 +312,7 @@
     let timer;
     let replayTimer;
     let frames = [];
+    let placements = null;
     let frameMoveNo = null;
 
     function notice(id, text) {
@@ -321,11 +376,15 @@
     function filteredGames() {
       const mode = byId('mode-filter').value;
       const color = byId('color-filter').value;
-      return games.filter((item) => (!mode || item.mode === mode) && (!color || item.you === color));
+      const state = byId('state-filter').value;
+      const query = byId('game-search').value.trim().toLowerCase();
+      return games.filter(item => (!mode || item.mode === mode) && (!color || item.you === color)
+        && (!state || item.active === (state === 'active'))
+        && (!query || `${item.title ?? item.id} ${item.gameId}`.toLowerCase().includes(query)));
     }
 
     function selectAvailable(items) {
-      const next = chooseSession(games, items, selected, byId('follow-latest').checked);
+      const next = items.length ? chooseSession(games, items, selected, byId('follow-latest').checked) : null;
       if (next === selected) return;
       if (selected !== null && !games.some((item) => item.id === selected)) {
         notice('selection-message', 'Выбранная партия вытеснена из истории. Открылась последняя доступная партия.');
@@ -360,15 +419,22 @@
         button.className = 'game-link';
         button.dataset.id = item.id;
         button.setAttribute('aria-pressed', String(item.id === selected));
-        title.textContent = item.id;
-        details.className = 'caption';
+        title.className = 'game-title';
+        title.textContent = item.title ?? item.id;
+        details.className = 'caption game-details';
         details.textContent = `${item.field.width} × ${item.field.height} · ${item.moveCount} ход. · ${score(item.score)} · ${date(item.lastMoveAt)}`;
         badge.className = 'mode';
         badge.dataset.mode = item.mode;
         badge.textContent = modeNames[item.mode];
         badges.className = 'session-badges';
-        badges.append(badge);
-        for (const label of [item.active ? 'Идёт' : '', newFlags[index] ? 'Новая' : '']) {
+        if (item.mode !== 'unknown') badges.append(badge);
+        if (colors[item.you]) {
+          const side = document.createElement('span');
+          side.className = `mode ${item.you}`;
+          side.textContent = `Бот: ${colors[item.you].toLowerCase()}`;
+          badges.append(side);
+        }
+        for (const label of [item.active ? 'Идёт' : 'Завершена', newFlags[index] ? 'Новая' : '']) {
           if (!label) continue;
           const state = document.createElement('span');
           state.className = 'mode';
@@ -438,6 +504,8 @@
       byId('follow-latest').checked = true;
       notice('selection-message', '');
       byId('mode-filter').value = '';
+      byId('state-filter').value = '';
+      byId('game-search').value = '';
       byId('color-filter').value = '';
       resetReplay();
       renderRecent([]);
@@ -495,7 +563,7 @@
 
     function renderGame() {
       const snapshot = game?.snapshot;
-      byId('game-title').textContent = game?.id ?? 'Поле партии';
+      byId('game-title').textContent = game?.title ?? game?.id ?? 'Поле партии';
       byId('game-meta').textContent = snapshot ? `${snapshot.field.width} × ${snapshot.field.height} · ${score(snapshot.score)}` : '';
       byId('empty-board').hidden = Boolean(snapshot);
       byId('empty-board').textContent = authenticated ? 'Здесь появится поле партии.' : 'Войдите в историю и выберите партию.';
@@ -520,6 +588,8 @@
       if (snapshot) byMove.set(snapshot.moveNo, snapshot);
       frames = Array.from(byMove.values()).filter((entry) => entry.moveNo <= snapshot.moveNo)
         .sort((a, b) => a.moveNo - b.moveNo);
+      placements = snapshot ? replayPlacements(snapshot, frames) : null;
+      if (game?.afterResponse) frames.push(game.afterResponse);
       byId('replay').max = Math.max(0, frames.length - 1);
       byId('replay').disabled = frames.length < 2;
       byId('play').disabled = frames.length < 2;
@@ -546,11 +616,14 @@
         index = frames.length - 1;
         frameMoveNo = null;
       }
-      const latest = index === frames.length - 1;
+      const frame = frames[index];
+      const caption = frame.afterResponse ? 'после ответа бота, расчёт' :
+        frame === snapshot ? 'снимок до ответа бота' : 'приближённо, без данных о мёртвых точках';
       byId('replay').value = index;
-      byId('frame').textContent = `Ход №${frames[index].moveNo} · ${latest ? 'снимок до ответа бота' : 'приближённо, без данных о мёртвых точках'}`;
+      byId('frame').textContent = `Ход №${frame.moveNo} · ${caption}`;
       byId('board').setAttribute('aria-label', byId('frame').textContent);
-      byId('game-meta').textContent = `${snapshot.field.width} × ${snapshot.field.height} · ${latest ? score(snapshot.score) : 'счёт снимка ' + score(snapshot.score)}`;
+      const side = colors[frame.you] ? ` · Бот: ${colors[frame.you].toLowerCase()}` : '';
+      byId('game-meta').textContent = `${snapshot.field.width} × ${snapshot.field.height} · ${score(frame.score)}${side}`;
     }
 
     function showFrame(index) {
@@ -562,14 +635,11 @@
     function boardPosition() {
       const snapshot = game.snapshot;
       const frame = frames[Number(byId('replay').value)];
-      if (frame === snapshot) return snapshot;
-      // Красные ходят первыми, в points ходы каждого цвета идут по порядку постановки.
-      const preceding = frame.moveNo - 1;
-      return {
-        ...frame, field: snapshot.field,
-        points: { red: snapshot.points.red.slice(0, Math.ceil(preceding / 2)), blue: snapshot.points.blue.slice(0, Math.floor(preceding / 2)) },
-        dead: { red: [], blue: [] },
-      };
+      if (frame === snapshot || frame.afterResponse) return frame;
+      const points = Object.fromEntries(['red', 'blue'].map(color => [
+        color, placements[color].filter(entry => entry.presentBy < frame.moveNo).map(entry => entry.point),
+      ]));
+      return { ...frame, field: snapshot.field, points, dead: { red: [], blue: [] } };
     }
 
     function canvasContext(id) {
@@ -604,6 +674,22 @@
       for (let col = 0; col < cols; col += stride) { ctx.moveTo(x(col), top); ctx.lineTo(x(col), y(rows - 1)); }
       for (let row = 0; row < rows; row += stride) { ctx.moveTo(left, y(row)); ctx.lineTo(x(cols - 1), y(row)); }
       ctx.stroke();
+      if (byId('board-links').checked) {
+        ctx.save();
+        ctx.globalAlpha = .64;
+        ctx.lineCap = 'round';
+        ctx.lineWidth = Math.max(.85, Math.min(radius * .52, 3));
+        for (const color of ['red', 'blue']) {
+          ctx.strokeStyle = paint(`--${color}`);
+          ctx.beginPath();
+          for (const [[x1, y1], [x2, y2]] of liveConnections(snapshot.points[color], snapshot.dead[color])) {
+            ctx.moveTo(x(x1), y(y1));
+            ctx.lineTo(x(x2), y(y2));
+          }
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
       for (const color of ['red', 'blue']) {
         const dead = new Set(snapshot.dead[color].map((point) => point.join(',')));
         ctx.fillStyle = paint(`--${color}`);
@@ -632,12 +718,14 @@
         ctx.strokeStyle = paint('--ink');
         ctx.strokeRect(x(col) - outline, y(row) - outline, outline * 2, outline * 2);
       }
-      if (own) {
+      if (own && colors[snapshot.you]) {
         ctx.strokeStyle = paint(`--${snapshot.you}`);
         ctx.fillStyle = ctx.strokeStyle;
-        ctx.beginPath();
-        ctx.arc(x(own[0]), y(own[1]), Math.min(radius, 3), 0, Math.PI * 2);
-        ctx.fill();
+        if (!snapshot.afterResponse) {
+          ctx.beginPath();
+          ctx.arc(x(own[0]), y(own[1]), Math.min(radius, 3), 0, Math.PI * 2);
+          ctx.fill();
+        }
         ctx.beginPath();
         ctx.arc(x(own[0]), y(own[1]), outline, 0, Math.PI * 2);
         ctx.stroke();
@@ -759,16 +847,29 @@
       const url = URL.createObjectURL(new Blob([JSON.stringify(game, null, 2)], { type: 'application/json' }));
       const link = document.createElement('a');
       link.href = url;
-      link.download = `dots-${game.id.replace(/[^\p{L}\p{N}_.-]/gu, '_').slice(0, 100)}.json`;
+      link.download = `dots-${(game.title ?? game.id).replace(/[^\p{L}\p{N}_.-]/gu, '_').slice(0, 100)}.json`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
-    byId('filters').addEventListener('change', () => {
-      selectAvailable(filteredGames());
+    function updateGameFilter() {
+      const previous = selected;
+      const items = filteredGames();
+      if (!items.some(item => item.id === selected)) {
+        resetReplay();
+        selected = null;
+        game = null;
+      }
+      selectAvailable(items);
       renderGames();
-      renderGame();
-      refreshGames(true);
-    });
+      notice('game-message', items.length ? '' : 'Нет партий с такими фильтрами.');
+      if (previous !== selected) {
+        renderGame();
+        refreshGames(true);
+      }
+    }
+    byId('filters').addEventListener('change', updateGameFilter);
+    byId('game-search').addEventListener('input', updateGameFilter);
+    byId('board-links').addEventListener('change', drawCanvases);
     byId('replay').addEventListener('input', (event) => {
       stopReplay();
       showFrame(Number(event.target.value));

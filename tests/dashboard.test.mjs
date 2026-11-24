@@ -167,12 +167,12 @@ test('на границе лимита сессий сохраняется ст�
   now += 30_000;
   assert.deepEqual(await jsonOk(await move(port, { ...initial, gameId: 'keep' })), keep);
   assert.equal((await jsonOk(await gamesApi(port, '/api/games/sandbox'))).active, true);
-  for (let width = 6; width < 25; width++) {
+  for (let width = 6; width < 45; width++) {
     await jsonOk(await move(port, { ...initial, gameId: 'sandbox', field: { width, height: 4 } }));
   }
   const list = await jsonOk(await gamesApi(port));
-  assert.equal(list.length, 20);
-  assert.equal(list[0].id, 'sandbox#20');
+  assert.equal(list.length, 40);
+  assert.equal(list[0].id, 'sandbox#40');
   assert.ok(list.some((item) => item.id === 'keep' && item.active));
   assert.equal((await gamesApi(port, '/api/games/sandbox')).status, 404);
 });
@@ -323,12 +323,12 @@ test('история хранит ходы, режим и последний с�
   assert.equal(stats.lastRequestAt, game.moves.at(-1).receivedAt);
 });
 
-test('21-я партия вытесняет первую', async (t) => {
+test('41-я партия вытесняет первую', async (t) => {
   const port = await start(t, { dashboardToken: TOKEN });
-  for (let index = 0; index < 21; index++) await jsonOk(await move(port, { gameId: `game-${index}` }));
+  for (let index = 0; index < 41; index++) await jsonOk(await move(port, { gameId: `game-${index}` }));
   const list = await jsonOk(await gamesApi(port));
-  assert.equal(list.length, 20);
-  assert.equal(list[0].id, 'game-20');
+  assert.equal(list.length, 40);
+  assert.equal(list[0].id, 'game-40');
   assert.equal(list.at(-1).id, 'game-1');
   assert.equal((await gamesApi(port, '/api/games/game-0')).status, 404);
 });
@@ -351,4 +351,19 @@ test('ошибка записи истории не меняет ответ хо
   assert.deepEqual(await jsonOk(await move(port)), await jsonOk(await move(port)));
   assert.equal((await jsonOk(await api(port, '/api/status'))).recordingErrors, 2);
   assert.equal(spy.mock.callCount(), 2);
+});
+
+test('воспроизведение учитывает пропущенный ход и соединяет только живые соседние точки', async () => {
+  const html = await readFile(new URL('../dashboard/index.html', import.meta.url), 'utf8');
+  const script = html.match(/<script id="board-replay">([\s\S]*?)<\/script>/)[1];
+  const { replayPlacements, liveConnections } = runInNewContext(`${script}\n({ replayPlacements, liveConnections })`);
+  const snapshot = { moveNo: 8, points: { red: [[1, 1], [1, 2]], blue: [[2, 2], [3, 3], [3, 4]] } };
+  const timeline = replayPlacements(snapshot, [
+    { moveNo: 2, you: 'blue', last: [1, 1], move: { x: 2, y: 2 }, status: 200 },
+    { moveNo: 4, you: 'blue', last: [2, 2], move: { x: 3, y: 3 }, status: 200 },
+    { moveNo: 6, you: 'blue', last: [1, 2], move: { x: 3, y: 4 }, status: 200 },
+  ]);
+  assert.equal(JSON.stringify(timeline.red.map(p => p.presentBy)), '[1,5]');
+  assert.equal(JSON.stringify(timeline.blue.map(p => p.presentBy)), '[2,4,6]');
+  assert.equal(JSON.stringify(liveConnections(snapshot.points.blue, [[3, 4]])), '[[[2,2],[3,3]]]');
 });

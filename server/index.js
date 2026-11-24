@@ -32,7 +32,7 @@ function addCorsHeaders(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'Content-Type, Authorization, X-Arena-Run, X-Arena-Spec, X-Arena-Mode, X-Arena-Seq'
+    'Content-Type, Authorization, X-Arena-Run, X-Arena-Spec, X-Arena-Mode, X-Arena-Seq, X-Arena-Opponent-Domain, X-Arena-Opponent-Url, X-Arena-Opponent'
   );
   res.setHeader('Access-Control-Allow-Private-Network', 'true');
   res.setHeader('Vary', 'Origin');
@@ -411,6 +411,7 @@ export function createBotServer({
       const receivedAt = Date.now();
       const startedAt = performance.now();
       const mode = req.headers['x-arena-mode'];
+      const opponent = req.headers['x-arena-opponent-domain'] ?? req.headers['x-arena-opponent-url'] ?? req.headers['x-arena-opponent'];
       let position;
       let session;
       let playedMove = null;
@@ -423,7 +424,7 @@ export function createBotServer({
           // Панель и обучающий архив принимают только конечную сетку.
           const finitePosition = position?.field.infinite === true ? undefined : position;
           try {
-            dashboard.record({ request: finitePosition, session, mode, move: playedMove, fallback, receivedAt, durationMs, status });
+            dashboard.record({ request: finitePosition, session, mode, opponent, move: playedMove, fallback, receivedAt, durationMs, status });
           } catch {
             dashboard.recordError();
           }
