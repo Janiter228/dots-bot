@@ -1,5 +1,6 @@
 import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { addDashboardAccessControls } from './dashboard-access.js';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../dashboard', import.meta.url));
@@ -13,7 +14,7 @@ const TYPES = new Map([
   ['.json', 'application/json; charset=utf-8'],
 ]);
 
-export async function serveDashboardFile(req, res, rawPath) {
+export async function serveDashboardFile(req, res, rawPath, passwordAccess = false) {
   if (!['GET', 'HEAD'].includes(req.method) || !rawPath.startsWith('/')) return false;
 
   let relative;
@@ -46,7 +47,13 @@ export async function serveDashboardFile(req, res, rawPath) {
     const info = await stat(target);
     if (!info.isFile()) return false;
     size = info.size;
-    if (req.method === 'GET') body = await readFile(target);
+    if (isIndex && passwordAccess) {
+      const html = addDashboardAccessControls(await readFile(target, 'utf8'));
+      size = Buffer.byteLength(html);
+      if (req.method === 'GET') body = Buffer.from(html);
+    } else if (req.method === 'GET') {
+      body = await readFile(target);
+    }
   } catch {
     return false;
   }
