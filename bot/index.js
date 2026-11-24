@@ -1,5 +1,5 @@
 /**
- * Dots Bot v0.3.4 — поиск с приоритетом защиты от немедленного захвата.
+ * Dots Bot v0.4.0 — поиск с приоритетом защиты от немедленного захвата.
  *
  * Что делает алгоритм:
  *  - использует правила связности из спецификации: точки соединяются по 8
@@ -16,6 +16,11 @@
  * На безграничном поле используется разреженный позиционный выбор без minimax.
  */
 
+import { analyzePosition } from './position-analysis.js';
+import { proveForkGain, unavoidableForkLoss } from './fork-defense.js';
+import { solveEndgame } from './endgame.js';
+import { fieldProfile } from './field-profile.js';
+
 const EMPTY = 0;
 const OUR_LIVE = 1;
 const ENEMY_LIVE = 2;
@@ -27,6 +32,15 @@ const NEIGHBORS_8 = [
   [-1, 0],             [1, 0],
   [-1, 1],  [0, 1],    [1, 1],
 ];
+
+// Экспериментальные изменения выбора хода требуют отдельной абляции.
+export const TACTICS = {
+  frontierAnalysis: false,
+  forkDefense: false,
+  forcingAttack: false,
+  exactEndgame: false,
+  profile: undefined,
+};
 
 const CONFIG = {
   maxThinkMs: 475,
@@ -431,7 +445,7 @@ function captureMoves(board, width, height, wall, target, enemyTerritory, redCod
 }
 
 function rankMoves(board, width, height, playerCode, enemyCode, limit, deadline,
-  ownTerritory, enemyTerritory, forced, redCode) {
+  ownTerritory, enemyTerritory, forced, redCode, analysis) {
   // Любая клетка внутри закрытой области нежелательна:
   // - в чужой территории наша точка сразу погибнет и даст сопернику очко;
   // - в своей территории ход не приносит очков и расходует очередь, хотя
@@ -445,8 +459,8 @@ function rankMoves(board, width, height, playerCode, enemyCode, limit, deadline,
     board, width, height, playerCode, enemyCode,
     Math.max(limit * CONFIG.oversample, limit), forbiddenMask, enemyTerritory,
   );
-  const groupsOwn = buildGroups(board, width, height, playerCode);
-  const groupsEnemy = buildGroups(board, width, height, enemyCode);
+  const groupsOwn = analysis?.own ?? buildGroups(board, width, height, playerCode);
+  const groupsEnemy = analysis?.enemy ?? buildGroups(board, width, height, enemyCode);
   const liveTotal = countLive(board, playerCode) + countLive(board, enemyCode);
   const ranked = [];
 
@@ -461,7 +475,10 @@ function rankMoves(board, width, height, playerCode, enemyCode, limit, deadline,
       board, index, width, height, playerCode, enemyCode,
       groupsOwn, groupsEnemy, liveTotal,
     );
-    const score = simulation.captured * WEIGHTS.orderingCapture
+    const connection = analysis?.own.cuts.get(index);
+    const cut = analysis?.enemy.cuts.get(index);
+    const frontierBonus = (connection?.contested ? 12 : 0) + (cut?.contested ? 8 : 0);
+    const score = simulation.captured * WEIGHTS.orderingCapture + frontierBonus
       + position
       - (simulation.selfCaptured ? WEIGHTS.selfCapturePenalty : 0);
 
@@ -708,9 +725,11 @@ export function chooseMove(request) {
     clockBudget,
   ));
   const deadline = started + thinkBudget;
-  if (request.field.infinite) return chooseInfiniteMove(request, deadline);
+  if (fieldProfile(request.field) === 'infinite') return chooseInfiniteMove(request, deadline);
 
   const { board, width, height } = buildBoard(request);
+  const freeCount = board.length - request.points.red.length - request.points.blue.length;
+  const profile = fieldProfile(request.field, freeCount, TACTICS.profile);
   const redCode = request.you === 'red' ? OUR_LIVE : ENEMY_LIVE;
   const moveAt = (index) => index < 0 ? null : { x: index % width, y: Math.floor(index / width) };
   const legal = findFreeIndex(board, width, height);
@@ -724,7 +743,8 @@ export function chooseMove(request) {
     return moveAt(findFreeIndex(board, width, height, ours, enemy));
   }
 
-  const { ours, enemy, attacks, dangers } = threats(board, width, height, redCode);
+  const rootThreats = threats(board, width, height, redCode);
+  const { ours, enemy, attacks, dangers } = rootThreats;
   const safe = findFreeIndex(board, width, height, ours, enemy);
   const blocks = dangers.filter(({ index }) => !enemy[index]);
   const quickAttack = dangers.length === 0 && attacks.length === 1 ? attacks[0].index : undefined;
@@ -748,17 +768,75 @@ export function chooseMove(request) {
     return moveAt(fallback);
   }
 
+  if (TACTICS.exactEndgame && profile === 'tiny' && board.length <= 100) {
+    try {
+      const endgameDeadline = Math.min(deadline, performance.now() + thinkBudget * 0.5);
+      const endgame = solveEndgame(board, (position, index, color) =>
+        applyMove(position, index, width, height, color, 3 - color, undefined, redCode).board,
+      endgameDeadline);
+      if (endgame?.solved) return moveAt(endgame.move);
+    } catch {
+      // При недоказанном результате остаётся обычный поиск.
+    }
+  }
+
   const forced = [...attacks, ...blocks].map(({ index }) => index);
   const ordinaryDeadline = started + thinkBudget * 0.8;
+  let analysis;
+  if (TACTICS.frontierAnalysis) {
+    try {
+      analysis = analyzePosition({
+        board, width, height, threats: rootThreats,
+        groupsOwn: buildGroups(board, width, height, OUR_LIVE),
+        groupsEnemy: buildGroups(board, width, height, ENEMY_LIVE),
+        deadline: Math.min(ordinaryDeadline, performance.now() + thinkBudget * 0.03),
+      });
+    } catch {
+      // Обычный поиск остаётся доступен при сбое экспериментального анализа.
+    }
+  }
   const rootMoves = rankMoves(
     board, width, height, OUR_LIVE, ENEMY_LIVE,
-    CONFIG.rootMoves, ordinaryDeadline, ours, enemy, forced, redCode,
+    CONFIG.rootMoves, ordinaryDeadline, ours, enemy, forced, redCode, analysis,
   );
   if (!rootMoves?.length) return moveAt(fallback);
   if (directBlock !== undefined) {
     const blockPosition = rootMoves.findIndex(({ index }) => index === directBlock);
     if (blockPosition > 0) rootMoves.unshift(rootMoves.splice(blockPosition, 1)[0]);
   }
+  if (TACTICS.forcingAttack && profile === 'tiny' && forced.length === 0 && board.length <= 100) {
+    try {
+      const attackDeadline = Math.min(ordinaryDeadline, performance.now() + Math.min(18, thinkBudget * 0.15));
+      const startingScore = countLive(board, ENEMY_DEAD) - countLive(board, OUR_DEAD);
+      const simulate = (position, index, color) =>
+        applyMove(position, index, width, height, color, 3 - color, undefined, redCode).board;
+      let bestAttack = null;
+      let bestGain = 0;
+      for (const candidate of rootMoves.slice(0, 12)) {
+        if (performance.now() >= attackDeadline) break;
+        if (candidate.selfCaptured) continue;
+        const defendingTerritory = enclosed(candidate.board, width, height, ENEMY_LIVE);
+        const closures = captureMoves(candidate.board, width, height, OUR_LIVE, ENEMY_LIVE, defendingTerritory, redCode);
+        if (closures.length < 2) continue;
+        const gain = proveForkGain(
+          candidate.board, OUR_LIVE, closures.slice(0, 4).map(({ index }) => index),
+          simulate, attackDeadline,
+        );
+        if (!gain) continue;
+        const openingSwing = countLive(candidate.board, ENEMY_DEAD) -
+          countLive(candidate.board, OUR_DEAD) - startingScore;
+        if (openingSwing + gain > bestGain) {
+          bestGain = openingSwing + gain;
+          bestAttack = candidate.index;
+        }
+      }
+      if (bestAttack !== null) return moveAt(bestAttack);
+    } catch {
+      // Обычный поиск остаётся доступен при сбое доказательного поиска.
+    }
+  }
+  const forkBudget = TACTICS.forkDefense && profile === 'tiny' && board.length <= 81 ? Math.min(12, thinkBudget * 0.12) : 0;
+  let forkTimeRemaining = forkBudget;
   let lossFreeIndex = -1;
   const completed = [];
 
@@ -789,8 +867,28 @@ export function chooseMove(request) {
           fullyEvaluated = false;
           break;
         }
-        const score = evaluatePosition(reply.board, width, height);
-        reply.staticScore = score;
+        const staticScore = evaluatePosition(reply.board, width, height);
+        let score = staticScore;
+        if (forkTimeRemaining > 0) {
+          const start = performance.now();
+          const forkDeadline = Math.min(ordinaryDeadline, start + forkTimeRemaining);
+          try {
+            const territory = enclosed(reply.board, width, height, OUR_LIVE);
+            const closures = captureMoves(reply.board, width, height, ENEMY_LIVE, OUR_LIVE, territory, redCode);
+            if (closures.length >= 2 && performance.now() < forkDeadline) {
+              const damage = unavoidableForkLoss(
+                reply.board, closures.slice(0, 4).map(({ index }) => index),
+                (position, index, color) => applyMove(position, index, width, height, color, 3 - color, undefined, redCode).board,
+                forkDeadline,
+              );
+              score -= (damage ?? 0) * WEIGHTS.lost;
+            }
+          } catch {
+            // Без доказательства сохраняем прежнюю оценку ответа.
+          }
+          forkTimeRemaining -= performance.now() - start;
+        }
+        reply.staticScore = staticScore;
         if (score < worstReplyScore) worstReplyScore = score;
       }
     }
@@ -829,4 +927,4 @@ export function chooseMove(request) {
   return moveAt(tactical ? deeperIndex : bestIndex);
 }
 
-export const BOT_VERSION = '0.3.4';
+export const BOT_VERSION = '0.4.0';

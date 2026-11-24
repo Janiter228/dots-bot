@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BOT_VERSION } from '../bot/index.js';
+import { infiniteFallback } from '../bot/field-profile.js';
 import { computeMove } from './compute-move.js';
 import { createDashboard, serveDashboardFile } from './dashboard.js';
 import { createDashboardAccess } from './dashboard-access.js';
@@ -77,14 +78,13 @@ function isInteger(value) {
   return Number.isSafeInteger(value);
 }
 
-function isCoordinate(value, width, height) {
+function isCoordinate(value, { width, height, infinite }) {
   return (
     Array.isArray(value) &&
     value.length === 2 &&
     isInteger(value[0]) &&
     isInteger(value[1]) &&
-    value[0] >= 0 && value[0] < width &&
-    value[1] >= 0 && value[1] < height
+    (infinite === true || (value[0] >= 0 && value[0] < width && value[1] >= 0 && value[1] < height))
   );
 }
 
@@ -104,12 +104,9 @@ function validateMoveRequest(request) {
   }
 
   const field = request.field;
-  if (!field || !isInteger(field.width) || !isInteger(field.height) ||
-      field.width < 1 || field.height < 1) {
+  if (!field || (field.infinite !== true && (!isInteger(field.width) || !isInteger(field.height) ||
+      field.width < 1 || field.height < 1))) {
     return 'field.width и field.height должны быть положительными целыми числами';
-  }
-  if (field.infinite === true) {
-    return 'Бот пока поддерживает только конечное поле';
   }
 
   const points = request.points;
@@ -118,15 +115,20 @@ function validateMoveRequest(request) {
   }
 
   for (const color of ['red', 'blue']) {
+    const dead = request.dead?.[color];
+    if (field.infinite === true && dead != null &&
+        (!Array.isArray(dead) || dead.some(point => !isCoordinate(point, field)))) {
+      return `В dead.${color} найдена координата неверного формата`;
+    }
     for (const point of points[color]) {
-      if (!isCoordinate(point, field.width, field.height)) {
+      if (!isCoordinate(point, field)) {
         return `В points.${color} найдена координата за пределами поля или неверного формата`;
       }
     }
   }
 
   if (request.last !== null && request.last !== undefined &&
-      !isCoordinate(request.last, field.width, field.height)) {
+      !isCoordinate(request.last, field)) {
     return 'last должен быть null или парой координат внутри поля';
   }
 
@@ -134,6 +136,7 @@ function validateMoveRequest(request) {
 }
 
 function findAnyFreeMove(request) {
+  if (request.field.infinite === true) return infiniteFallback(request.points);
   const { width, height } = request.field;
   const busy = new Set();
 
@@ -160,12 +163,7 @@ function findAnyFreeMove(request) {
 }
 
 function isLegalMove(move, request) {
-  if (!move || !isInteger(move.x) || !isInteger(move.y)) return false;
-
-  const { width, height } = request.field;
-  if (move.x < 0 || move.x >= width || move.y < 0 || move.y >= height) {
-    return false;
-  }
+  if (!move || !isCoordinate([move.x, move.y], request.field)) return false;
 
   const key = `${move.x},${move.y}`;
   return !request.points.red.some(([x, y]) => `${x},${y}` === key) &&
@@ -173,7 +171,8 @@ function isLegalMove(move, request) {
 }
 
 function positionFingerprint({ you, field, points, dead }) {
-  const position = [you, field.width, field.height, points.red, points.blue, dead?.red ?? [], dead?.blue ?? []];
+  const dimensions = field.infinite === true ? [true] : [field.width, field.height];
+  const position = [you, dimensions, points.red, points.blue, dead?.red ?? [], dead?.blue ?? []];
   return createHash('sha256').update(JSON.stringify(position)).digest('base64');
 }
 
@@ -308,13 +307,15 @@ export function createBotServer({
         const durationMs = performance.now() - startedAt;
         const status = res.statusCode;
         setImmediate(() => {
+          // Панель и обучающий архив принимают только конечную сетку.
+          const finitePosition = position?.field.infinite === true ? undefined : position;
           try {
-            dashboard.record({ request: position, session, mode, move: playedMove, fallback, receivedAt, durationMs, status });
+            dashboard.record({ request: finitePosition, session, mode, move: playedMove, fallback, receivedAt, durationMs, status });
           } catch {
             dashboard.recordError();
           }
           try {
-            gameLogs.record({ request: position, mode, move: playedMove, fallback, receivedAt, durationMs, status });
+            gameLogs.record({ request: finitePosition, mode, move: playedMove, fallback, receivedAt, durationMs, status });
           } catch {
             dashboard.recordError();
           }
@@ -363,20 +364,23 @@ export function createBotServer({
       }
       const fingerprint = positionFingerprint(request);
       const { width, height } = request.field;
+      const infinite = request.field.infinite === true;
+      const sessionField = infinite ? { infinite: true } : { width, height };
       const pointCount = request.points.red.length + request.points.blue.length;
       let game = games.get(gameId);
       let entry = game?.moves.get(moveNo);
       const exact = entry?.fingerprint === fingerprint ||
         (game?.lastMoveNo === moveNo && game.lastFingerprint === fingerprint);
       if (!game || (!exact && (moveNo <= game.lastMoveNo || pointCount < game.pointCount ||
-          width !== game.session.field.width || height !== game.session.field.height))) {
+          infinite !== (game.session.field.infinite === true) ||
+          sessionField.width !== game.session.field.width || sessionField.height !== game.session.field.height))) {
         let number = game?.number ?? 0;
         let id;
         do {
           number += 1;
           id = number === 1 ? gameId : `${gameId}#${number}`;
         } while (dashboard.hasSession(id) || Array.from(games.values()).some((current) => current.session.id === id));
-        game = { number, session: { id, gameId, startedAt: now, field: { width, height } }, moves: new Map() };
+        game = { number, session: { id, gameId, startedAt: now, field: sessionField }, moves: new Map() };
         entry = undefined;
       }
       session = game.session;
