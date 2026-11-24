@@ -1,3 +1,4 @@
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { addDashboardAccessControls } from './dashboard-access.js';
@@ -68,6 +69,7 @@ export async function serveDashboardFile(req, res, rawPath, passwordAccess = fal
 }
 
 const MAX_GAMES = 20;
+const RETENTION_MS = 24 * 60 * 60 * 1000;
 const MAX_MOVES = 3000;
 const MAX_RECENT_MOVES = 10;
 const MODES = new Set(['check', 'practice', 'round']);
@@ -101,10 +103,11 @@ function describeGame(game) {
   };
 }
 
-export function createDashboard() {
+export function createDashboard({ historyFile } = {}) {
   const startedAt = performance.now();
   const games = new Map();
-  const recent = [];
+  let recent = [];
+  const deleted = new Map();
   let moves = 0;
   let totalMs = 0;
   let maxMs = 0;
@@ -112,6 +115,83 @@ export function createDashboard() {
   let errors = 0;
   let recordingErrors = 0;
   let lastRequestAt = null;
+
+  let dirty = false;
+  let saveTimer;
+
+  function prune() {
+    const oldest = Date.now() - RETENTION_MS;
+    for (const [id, game] of games) {
+      if (game.lastMoveAt <= oldest) {
+        games.delete(id);
+        dirty = true;
+      }
+    }
+    for (const [id, entry] of deleted) {
+      if (entry.deletedAt <= oldest) {
+        deleted.delete(id);
+        dirty = true;
+      }
+    }
+    recent = recent.filter(entry => games.has(entry.sessionId));
+  }
+
+  function flush() {
+    clearTimeout(saveTimer);
+    saveTimer = undefined;
+    prune();
+    if (!historyFile || !dirty) return;
+    const temporary = historyFile + '.tmp';
+    mkdirSync(path.dirname(historyFile), { recursive: true });
+    try {
+      writeFileSync(temporary, JSON.stringify({
+        games: Array.from(games.values(), game => ({ ...game, moves: [...game.moves] })),
+        recent, deleted: [...deleted],
+      }), { mode: 0o600 });
+      renameSync(temporary, historyFile);
+      dirty = false;
+    } catch (error) {
+      rmSync(temporary, { force: true });
+      throw error;
+    }
+  }
+
+  function scheduleSave() {
+    if (!historyFile || !dirty || saveTimer) return;
+    saveTimer = setTimeout(() => {
+      try { flush(); } catch (error) {
+        recordingErrors++;
+        console.error('Не удалось сохранить историю панели:', error.message);
+      }
+    }, 500);
+    saveTimer.unref();
+  }
+
+  if (historyFile) {
+    try {
+      const saved = JSON.parse(readFileSync(historyFile, 'utf8'));
+      const records = saved.games.slice(0, MAX_GAMES).map(game => ({
+        ...game, moves: new Map(game.moves.slice(-MAX_MOVES)),
+      }));
+      const removals = new Map(saved.deleted ?? []);
+      recent = (saved.recent ?? []).slice(0, MAX_RECENT_MOVES);
+      for (const game of records) games.set(game.session.id, game);
+      for (const [id, entry] of removals) deleted.set(id, entry);
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        recordingErrors++;
+        console.error('Не удалось загрузить историю панели:', error.message);
+      }
+    }
+    prune();
+    scheduleSave();
+    setInterval(() => { prune(); scheduleSave(); }, 60_000).unref();
+  }
+
+  function clean() {
+    prune();
+    scheduleSave();
+  }
 
   return {
     record({ request, session, mode, move, fallback, receivedAt, durationMs, status }) {
@@ -125,6 +205,8 @@ export function createDashboard() {
         errors += 1;
       }
       if (!request || !session) return;
+      clean();
+      if (deleted.has(session.id) || session.historyDeleted) return;
 
       const { gameId, moveNo, you, last, points } = request;
       const { width, height } = request.field;
@@ -144,19 +226,52 @@ export function createDashboard() {
       if (game.moves.size > MAX_MOVES) game.moves.delete(game.moves.keys().next().value);
       games.set(session.id, game);
       if (games.size > MAX_GAMES) {
-        const oldest = Array.from(games.values()).reduce((a, b) => {
-          const activeOrder = Number(a.session.endedAt === undefined) - Number(b.session.endedAt === undefined);
-          return (activeOrder || compareActivity(a, b)) <= 0 ? a : b;
-        });
+        const oldest = Array.from(games.values()).reduce((a, b) => compareActivity(a, b) <= 0 ? a : b);
         games.delete(oldest.session.id);
       }
 
+      dirty = true;
+      scheduleSave();
       if (status === 200) {
         const previous = recent.findIndex((entry) => entry.sessionId === session.id && entry.moveNo === moveNo);
         if (previous !== -1) recent.splice(previous, 1);
         recent.unshift({ gameId, sessionId: session.id, moveNo, you, last: record.last, move, fallback, receivedAt });
         if (recent.length > MAX_RECENT_MOVES) recent.pop();
       }
+    },
+    flush,
+    sessionChanged() {
+      dirty = true;
+      scheduleSave();
+    },
+    restore() {
+      clean();
+      return [
+        ...games.values(),
+        ...deleted.values(),
+      ].sort(compareActivity);
+    },
+    remove(id, metadata) {
+      clean();
+      const game = games.get(id);
+      if (!game) return false;
+      const oldRecent = recent;
+      const removed = { ...metadata, session: { ...game.session, historyDeleted: true }, deletedAt: Date.now() };
+      deleted.set(id, removed);
+      games.delete(id);
+      recent = recent.filter(entry => entry.sessionId !== id);
+      dirty = true;
+      try {
+        flush();
+      } catch (error) {
+        deleted.delete(id);
+        games.set(id, game);
+        recent = oldRecent;
+        scheduleSave();
+        throw error;
+      }
+      game.session.historyDeleted = true;
+      return true;
     },
     recordError() {
       recordingErrors += 1;
@@ -169,15 +284,18 @@ export function createDashboard() {
       };
     },
     list() {
+      clean();
       return Array.from(games.values()).sort((a, b) => compareActivity(b, a)).map(describeGame);
     },
     hasSession(id) {
-      return games.has(id);
+      return games.has(id) || deleted.has(id);
     },
     recent() {
+      clean();
       return recent.filter((entry) => games.has(entry.sessionId));
     },
     get(id) {
+      clean();
       const game = games.get(id);
       if (!game) return null;
       return {

@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BOT_VERSION } from '../bot/index.js';
@@ -180,6 +180,7 @@ export function createBotServer({
   dashboardAccessPasswordHash = process.env.DASHBOARD_ACCESS_PASSWORD_HASH,
   serveDashboard = process.env.SERVE_DASHBOARD !== '0',
   dashboard = createDashboard(),
+  restart,
   gameLogs = createGameLogs({ directory: process.env.GAME_LOG_DIR, botVersion: BOT_VERSION }),
 } = {}) {
   const games = new Map();
@@ -192,6 +193,47 @@ export function createBotServer({
     passwordHash: dashboardAccessPasswordHash,
   });
   const passwordAccess = serveDashboard && dashboardAccess.enabled;
+  const instanceId = randomUUID();
+  let restartPending = false;
+
+  function gameMetadata(record) {
+    const snapshot = record.snapshot;
+    if (!snapshot) {
+      return { lastMoveNo: record.lastMoveNo, lastFingerprint: record.lastFingerprint, pointCount: record.pointCount };
+    }
+    return {
+      lastMoveNo: snapshot.moveNo,
+      lastFingerprint: positionFingerprint(snapshot),
+      pointCount: snapshot.points.red.length + snapshot.points.blue.length,
+    };
+  }
+
+  for (const record of dashboard.restore()) {
+    const { session, snapshot } = record;
+    const number = session.id === session.gameId ? 1 : Number(session.id.slice(session.gameId.length + 1));
+    const game = { number, session, ...gameMetadata(record), moves: new Map() };
+    if (snapshot?.status === 200 && snapshot.move) {
+      game.moves.set(game.lastMoveNo, { fingerprint: game.lastFingerprint, response: snapshot.move });
+      if (snapshot.fallback) fallbackResponses.add(snapshot.move);
+    }
+    games.set(session.gameId, game);
+    if (games.size > MAX_CACHED_GAMES) games.delete(games.keys().next().value);
+    activityOrder = Math.max(activityOrder, session.activityOrder);
+  }
+
+  function requireDashboardAccess(req, res) {
+    if (!expectedAuthorization && !passwordAccess) {
+      sendError(res, 403, 'forbidden', 'Чтобы открыть партии, задайте DASHBOARD_TOKEN на сервере');
+      return false;
+    }
+    const authorization = req.headers.authorization ?? '';
+    const supplied = Buffer.from(authorization);
+    const matchesBearer = expectedAuthorization && supplied.length === expectedAuthorization.length &&
+      timingSafeEqual(supplied, expectedAuthorization);
+    if (matchesBearer || (passwordAccess && !authorization && dashboardAccess.hasSession(req))) return true;
+    sendError(res, 401, 'unauthorized', 'Введите действующий токен панели');
+    return false;
+  }
   return http.createServer(async (req, res) => {
     const rawPath = (req.url || '/').split('?', 1)[0];
     if (!rawPath.startsWith('/v1/')) {
@@ -221,23 +263,66 @@ export function createBotServer({
         return;
       }
       if (req.method === 'GET' && rawPath === '/api/status') {
-        sendJson(res, 200, { ...dashboard.status(BOT_VERSION), gameLogs: gameLogs.status() });
+        sendJson(res, 200, { ...dashboard.status(BOT_VERSION), gameLogs: gameLogs.status(), instanceId });
+        return;
+      }
+      if (serveDashboard && req.method === 'POST' && rawPath === '/api/restart') {
+        if (!requireDashboardAccess(req, res)) return;
+        if (!restart || !dashboardAccess.passwordConfigured) {
+          sendError(res, 503, 'restart_unavailable', 'Перезапуск не настроен на сервере');
+          return;
+        }
+        if ((req.headers['content-type'] ?? '').split(';', 1)[0].trim().toLowerCase() !== 'application/json') {
+          sendError(res, 415, 'unsupported_media_type', 'Ожидается Content-Type: application/json');
+          return;
+        }
+        let body;
+        try {
+          body = await readJson(req, 1024);
+        } catch (error) {
+          sendError(res, error.statusCode ?? 400, error.code ?? 'invalid_request', 'Не удалось прочитать запрос');
+          return;
+        }
+        const status = dashboardAccess.verifyPassword(res, body?.password);
+        if (status !== 200) {
+          sendError(res, status, status === 429 ? 'too_many_attempts' : 'unauthorized',
+            status === 429 ? 'Слишком много попыток' : 'Неверный пароль');
+          return;
+        }
+        res.once('finish', () => {
+          if (restartPending) return;
+          restartPending = true;
+          restart();
+        });
+        sendJson(res, 202, { instanceId });
+        return;
+      }
+      if (serveDashboard && req.method === 'DELETE' && rawPath.startsWith('/api/games/')) {
+        if (!requireDashboardAccess(req, res)) return;
+        const key = rawPath.slice('/api/games/'.length);
+        let id;
+        try { if (key && !key.includes('/')) id = decodeURIComponent(key); } catch {}
+        const game = id && dashboard.get(id);
+        if (game) {
+          const latest = games.get(game.gameId);
+          const state = latest?.session.id === id ? latest : gameMetadata(game);
+          const { lastMoveNo, lastFingerprint, pointCount } = state;
+          try {
+            if (dashboard.remove(id, { lastMoveNo, lastFingerprint, pointCount })) {
+              sendJson(res, 200, { ok: true });
+              return;
+            }
+          } catch (error) {
+            console.error('Не удалось удалить партию из истории:', error.message);
+            sendError(res, 500, 'delete_failed', 'Не удалось удалить партию');
+            return;
+          }
+        }
+        sendError(res, 404, 'not_found', 'Партия не найдена');
         return;
       }
       if (req.method === 'GET' && (rawPath === '/api/recent-moves' || rawPath === '/api/games' || rawPath.startsWith('/api/games/'))) {
-        if (!expectedAuthorization && !passwordAccess) {
-          sendError(res, 403, 'forbidden', 'Чтобы открыть партии, задайте DASHBOARD_TOKEN на сервере');
-          return;
-        }
-        const authorization = req.headers.authorization ?? '';
-        const supplied = Buffer.from(authorization);
-        const matchesBearer = expectedAuthorization && supplied.length === expectedAuthorization.length &&
-          timingSafeEqual(supplied, expectedAuthorization);
-        const matchesProject = passwordAccess && !authorization && dashboardAccess.hasSession(req);
-        if (!matchesBearer && !matchesProject) {
-          sendError(res, 401, 'unauthorized', 'Введите действующий токен панели');
-          return;
-        }
+        if (!requireDashboardAccess(req, res)) return;
         if (rawPath === '/api/games') {
           sendJson(res, 200, dashboard.list());
           return;
@@ -312,6 +397,7 @@ export function createBotServer({
       const game = games.get(gameId);
       if (game) {
         game.session.endedAt ??= Date.now();
+        dashboard.sessionChanged();
       } else {
         // Уведомление браузера может прийти раньше первого запроса хода.
         endedBeforeMove.add(gameId);
@@ -402,7 +488,10 @@ export function createBotServer({
           infinite !== (game.session.field.infinite === true) ||
           sessionField.width !== game.session.field.width || sessionField.height !== game.session.field.height))) {
         let number = game?.number ?? 0;
-        if (game) game.session.endedAt ??= now;
+        if (game) {
+          game.session.endedAt ??= now;
+          dashboard.sessionChanged();
+        }
         let id;
         do {
           number += 1;
@@ -510,7 +599,30 @@ if (isMainModule) {
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  const server = createBotServer();
+  const historyFile = path.join(process.env.GAME_LOG_DIR || fileURLToPath(new URL('../data', import.meta.url)),
+    'dashboard-history.json');
+  const dashboard = createDashboard({ historyFile });
+  let shuttingDown = false;
+  const server = createBotServer({
+    dashboard, restart: process.env.DOTS_SUPERVISED === '1' ? () => shutdown(75) : undefined,
+  });
+
+  function shutdown(code) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    const deadline = setTimeout(() => server.closeAllConnections(), 5500);
+    deadline.unref();
+    server.close(() => setImmediate(() => {
+      clearTimeout(deadline);
+      try { dashboard.flush(); } catch (error) {
+        console.error('Не удалось сохранить историю при остановке:', error.message);
+      }
+      process.exit(code);
+    }));
+  }
+
+  process.once('SIGTERM', () => shutdown(0));
+  process.once('SIGINT', () => shutdown(0));
   const useColor = !('NO_COLOR' in process.env) && Boolean(process.stdout.isTTY);
   const paint = (text, code) => useColor ? `\x1b[${code}m${text}\x1b[0m` : text;
   const line = (label, value) => console.log(`  ${paint(label.padEnd(16), '90')}${value}`);
