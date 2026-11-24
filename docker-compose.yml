@@ -5,4 +5,11 @@ services:
       - "4003:4003"
     env_file:
       - .env
+    environment:
+      GAME_LOG_DIR: /app/data/games
+    volumes:
+      - game-logs:/app/data/games
     restart: always
+
+volumes:
+  game-logs:

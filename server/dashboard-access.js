@@ -65,7 +65,7 @@ export function createDashboardAccess({ tokenHash, passwordHash }) {
 
 export function addDashboardAccessControls(html) {
   return html.replace(
-    '          </form>\n          <div id="filters"',
+    '          </form>\n          <label id="follow-label"',
     `            <button id="project-access" type="button" style="margin-top: .5rem">Наш токен</button>
           </form>
           <dialog id="project-access-dialog" aria-labelledby="project-access-label" style="max-width:calc(100% - 2rem); background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:.5rem">
@@ -79,16 +79,13 @@ export function addDashboardAccessControls(html) {
               <p id="project-access-error" class="notice" role="status" hidden></p>
             </form>
           </dialog>
-          <div id="filters"`
+          <label id="follow-label"`
   ).replace(
-    'async function refreshGames(force = false) {\n      if (!token ||',
-    'async function refreshGames(force = false, checkAvailability = false) {\n      if ((!token && !authenticated && !checkAvailability) ||'
+    '(!token && !checkAvailability)',
+    '(!token && !authenticated && !checkAvailability)'
   ).replace(
-    'const options = { signal: controller.signal, headers: { Authorization: `Bearer ${token}` } };',
-    'const options = { signal: controller.signal };\n      if (token) options.headers = { Authorization: `Bearer ${token}` };'
-  ).replace(
-    '        if (error.status === 401 || error.status === 403) {',
-    '        if (error.status === 401 && !token && !authenticated) return;\n        if (error.status === 401 || error.status === 403) {'
+    'error.status === 401 && !token',
+    'error.status === 401 && !token && !authenticated'
   ).replace(
     "byId('logout').addEventListener('click', () => {",
     `byId('logout').addEventListener('click', async () => {
@@ -101,7 +98,7 @@ export function addDashboardAccessControls(html) {
         return;
       }`
   ).replace(
-    '    schedule();\n  </script>',
+    '    schedule();\n    refreshGames(false, true);',
     `    const accessDialog = byId('project-access-dialog');
     const accessPassword = byId('project-password');
     const accessSubmit = byId('project-access-form').querySelector('[type=submit]');
@@ -141,7 +138,6 @@ export function addDashboardAccessControls(html) {
       }
     });
     schedule();
-    refreshGames(false, true);
-  </script>`
+    refreshGames(false, true);`
   );
 }
