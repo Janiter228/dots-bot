@@ -95,6 +95,9 @@
     .tabs { padding: 0; margin: .65rem 0 0; list-style: none; display: grid; gap: .35rem; }
     .game-link { width: 100%; text-align: left; overflow-wrap: anywhere; }
     .game-link span { display: block; }
+    .game-link .session-badges { display: flex; gap: .35rem; flex-wrap: wrap; }
+    .follow-session { display: flex; align-items: center; gap: .4rem; margin-bottom: .35rem; }
+    .follow-session input { min-height: 0; margin: 0; accent-color: var(--accent); }
     .game-link[aria-pressed="true"] { border-color: var(--accent); background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
     #game-title { overflow-wrap: anywhere; }
     #auth label { display: block; font-weight: bold; }
@@ -192,17 +195,30 @@
             <label for="token">Токен панели</label>
             <div class="auth-entry"><input id="token" type="password" autocomplete="off" required><button type="submit" class="primary">Войти</button></div>
           </form>
+          <label id="follow-label" class="caption follow-session" hidden><input id="follow-latest" type="checkbox" checked> Следить за последней</label>
           <div id="filters" class="filters" hidden>
             <label class="caption">Режим<select id="mode-filter"><option value="">Все</option><option value="check">Проверка</option><option value="practice">Тренировка</option><option value="round">Раунд</option><option value="unknown">Неизвестен</option></select></label>
             <label class="caption">Цвет бота<select id="color-filter"><option value="">Любой</option><option value="red">Красный</option><option value="blue">Синий</option></select></label>
           </div>
           <p id="game-message" class="notice" role="status" hidden></p>
+          <p id="selection-message" class="notice" role="status" hidden></p>
           <p id="games-summary" class="caption" hidden></p>
           <ul id="games" class="tabs" aria-label="Недавние партии"></ul>
         </div>
       </aside>
     </div>
   </main>
+  <script id="game-selection">
+    'use strict';
+
+    function chooseSession(games, filtered, selected, followLatest) {
+      if (!followLatest && games.some((item) => item.id === selected)) return selected;
+      const candidates = filtered.length ? filtered : games;
+      const newestActive = candidates.reduce((newest, item) =>
+        item.active && (!newest || item.startedAt > newest.startedAt) ? item : newest, null);
+      return (newestActive ?? candidates[0])?.id ?? null;
+    }
+  </script>
   <script>
     'use strict';
     const byId = (id) => document.getElementById(id);
@@ -296,8 +312,12 @@
     }
 
     function selectAvailable(items) {
-      if (items.some((item) => item.id === selected)) return;
-      selected = items[0]?.id ?? null;
+      const next = chooseSession(games, items, selected, byId('follow-latest').checked);
+      if (next === selected) return;
+      if (selected !== null && !games.some((item) => item.id === selected)) {
+        notice('selection-message', 'Выбранная партия вытеснена из истории. Открылась последняя доступная партия.');
+      }
+      selected = next;
       resetReplay();
       game = null;
     }
@@ -310,27 +330,39 @@
       byId('games-summary').textContent = scored.length ? `${count} Средний счёт: ${mean('red')} : ${mean('blue')}.` : count;
       const activeId = list.contains(document.activeElement) ? document.activeElement.dataset.id : undefined;
       const items = filteredGames();
-      const signature = JSON.stringify([items, selected]);
+      const now = Date.now();
+      const newFlags = items.map((item) => now - item.startedAt < 30_000);
+      const signature = JSON.stringify([items, selected, newFlags]);
       if (list.dataset.signature === signature) return;
       list.dataset.signature = signature;
       const fragment = document.createDocumentFragment();
-      for (const item of items) {
+      for (const [index, item] of items.entries()) {
         const row = document.createElement('li');
         const button = document.createElement('button');
         const title = document.createElement('span');
         const details = document.createElement('span');
         const badge = document.createElement('span');
+        const badges = document.createElement('span');
         button.type = 'button';
         button.className = 'game-link';
         button.dataset.id = item.id;
         button.setAttribute('aria-pressed', String(item.id === selected));
         title.textContent = item.id;
         details.className = 'caption';
-        details.textContent = `${item.moveCount} зап. · ${score(item.score)} · ${date(item.lastMoveAt)}`;
+        details.textContent = `${item.field.width} × ${item.field.height} · ${item.moveCount} ход. · ${score(item.score)} · ${date(item.lastMoveAt)}`;
         badge.className = 'mode';
         badge.dataset.mode = item.mode;
         badge.textContent = modeNames[item.mode];
-        button.append(title, details, badge);
+        badges.className = 'session-badges';
+        badges.append(badge);
+        for (const label of [item.active ? 'Идёт' : '', newFlags[index] ? 'Новая' : '']) {
+          if (!label) continue;
+          const state = document.createElement('span');
+          state.className = 'mode';
+          state.textContent = label;
+          badges.append(state);
+        }
+        button.append(title, details, badges);
         row.append(button);
         fragment.append(row);
       }
@@ -343,6 +375,7 @@
       byId('auth').hidden = value;
       byId('logout').hidden = !value;
       byId('filters').hidden = !value;
+      byId('follow-label').hidden = !value;
       byId('games-summary').hidden = !value;
       byId('recent').hidden = !value;
     }
@@ -357,7 +390,7 @@
       for (const record of moves) {
         const row = document.createElement('tr');
         const reply = coord(moveCoord(record.move)) + (record.fallback ? ' · запасной' : '');
-        for (const value of [record.gameId, record.moveNo, colors[record.you], coord(record.last), reply, date(record.receivedAt)]) {
+        for (const value of [record.sessionId ?? record.gameId, record.moveNo, colors[record.you], coord(record.last), reply, date(record.receivedAt)]) {
           const cell = document.createElement('td');
           cell.textContent = value;
           row.append(cell);
@@ -389,6 +422,8 @@
       games = [];
       game = null;
       setAuthenticated(false);
+      byId('follow-latest').checked = true;
+      notice('selection-message', '');
       byId('mode-filter').value = '';
       byId('color-filter').value = '';
       resetReplay();
@@ -398,12 +433,13 @@
       renderGame();
     }
 
-    async function refreshGames(force = false) {
-      if (!token || (gamesRequest && !force)) return;
+    async function refreshGames(force = false, checkAvailability = false) {
+      if ((!token && !checkAvailability) || (gamesRequest && !force)) return;
       gamesRequest?.abort();
       const controller = new AbortController();
       gamesRequest = controller;
-      const options = { signal: controller.signal, headers: { Authorization: `Bearer ${token}` } };
+      const options = { signal: controller.signal };
+      if (token) options.headers = { Authorization: `Bearer ${token}` };
       let recentRequest;
       try {
         const data = await fetchJson('/api/games', options);
@@ -415,7 +451,7 @@
         selectAvailable(items);
         renderGames();
         notice('game-message', items.length ? '' : (games.length ? 'Нет партий с такими фильтрами.' : 'Партии появятся после первого запроса хода.'));
-        const summary = items.find((item) => item.id === selected);
+        const summary = games.find((item) => item.id === selected);
         if (summary && (force || game?.id !== selected || game.revision !== summary.revision || game.lastMoveAt !== summary.lastMoveAt)) {
           const nextGame = await fetchJson(`/api/games/${encodeURIComponent(selected)}`, options);
           if (controller.signal.aborted) return;
@@ -426,9 +462,10 @@
         }
       } catch (error) {
         if (controller.signal.aborted) return;
+        if (error.status === 401 && !token) return;
         if (error.status === 401 || error.status === 403) {
           clearGames();
-          notice('game-message', error.status === 401 ? 'Токен не подошёл. Введите действующий токен панели.' : 'История закрыта. Задайте DASHBOARD_TOKEN на сервере.');
+          notice('game-message', error.status === 401 ? 'Неверный токен' : 'Задайте DASHBOARD_TOKEN на сервере и перезапустите контейнер');
           return;
         }
         if (!game) renderGame();
@@ -673,12 +710,19 @@
     });
     byId('games').addEventListener('click', (event) => {
       const button = event.target.closest('button[data-id]');
-      if (!button || button.dataset.id === selected) return;
+      if (!button) return;
+      byId('follow-latest').checked = false;
+      notice('selection-message', '');
+      if (button.dataset.id === selected) return;
       selected = button.dataset.id;
       resetReplay();
       game = null;
       renderGames();
       renderGame();
+      refreshGames(true);
+    });
+    byId('follow-latest').addEventListener('change', () => {
+      notice('selection-message', '');
       refreshGames(true);
     });
     byId('export').addEventListener('click', () => {
@@ -727,6 +771,7 @@
     byId('brand-icon').src = document.querySelector('link[rel=icon]').href;
     updateTheme();
     schedule();
+    refreshGames(false, true);
   </script>
 </body>
 </html>

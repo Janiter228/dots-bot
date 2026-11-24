@@ -1,4 +1,6 @@
 import { request } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { runInNewContext } from 'node:vm';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BOT_VERSION } from '../bot/index.js';
@@ -81,6 +83,7 @@ test('SERVE_DASHBOARD=0 отключает страницу и статичес�
 });
 
 const TOKEN = 'test-dashboard-token';
+const WRONG_TOKEN = 'x' + TOKEN.slice(1);
 const position = {
   gameId: 'g/тест?1', moveNo: 2, you: 'blue', field: { width: 5, height: 4 },
   points: { red: [[0, 0]], blue: [] }, dead: { red: [[0, 0]], blue: [] },
@@ -109,8 +112,91 @@ async function jsonOk(response) {
   return response.json();
 }
 
+test('новая песочница на меньшем поле пересчитывает первый ход', async (t) => {
+  const port = await start(t, { dashboardToken: TOKEN });
+  const first = {
+    gameId: 'sandbox', moveNo: 1, you: 'red', field: { width: 7, height: 7 },
+    points: { red: [], blue: [] }, dead: { red: [], blue: [] }, last: null,
+  };
+  assert.deepEqual(await jsonOk(await move(port, first)), { x: 3, y: 3 });
+  await jsonOk(await move(port, {
+    ...first, moveNo: 3, points: { red: [[3, 3]], blue: [[0, 0]] }, last: [0, 0],
+  }));
+
+  const second = { ...first, field: { width: 3, height: 3 } };
+  const reply = await jsonOk(await move(port, second));
+  assert.deepEqual(reply, { x: 1, y: 1 });
+  assert.deepEqual(await jsonOk(await move(port, second)), reply);
+
+  const list = await jsonOk(await gamesApi(port));
+  assert.deepEqual(list.map(({ id }) => id), ['sandbox#2', 'sandbox']);
+  assert.deepEqual(list.map(({ field }) => field), [second.field, first.field]);
+  assert.ok(list.every(({ active, startedAt, lastActivityAt }) => active && startedAt <= lastActivityAt));
+  const original = await jsonOk(await gamesApi(port, '/api/games/sandbox'));
+  const restarted = await jsonOk(await gamesApi(port, '/api/games/sandbox%232'));
+  assert.deepEqual(original.moves.map(({ moveNo }) => moveNo), [1, 3]);
+  assert.deepEqual(restarted.moves.map(({ moveNo }) => moveNo), [1, 1]);
+  assert.deepEqual(restarted.snapshot.points, second.points);
+  assert.equal((await jsonOk(await api(port, '/api/status'))).errors, 0);
+  const recent = await jsonOk(await gamesApi(port, '/api/recent-moves'));
+  assert.deepEqual(recent.map(({ sessionId, moveNo }) => [sessionId, moveNo]), [
+    ['sandbox#2', 1], ['sandbox', 3], ['sandbox', 1],
+  ]);
+});
+
+test('изменение позиции при том же номере и уменьшение числа точек открывают новые сессии', async (t) => {
+  const port = await start(t, { dashboardToken: TOKEN });
+  const initial = { gameId: 'sandbox', moveNo: 1, points: { red: [], blue: [] }, last: null };
+  const first = await jsonOk(await move(port, initial));
+  const changed = { ...initial, points: { red: [[first.x, first.y]], blue: [] }, last: [first.x, first.y] };
+  assert.notDeepEqual(await jsonOk(await move(port, changed)), first);
+  assert.deepEqual(await jsonOk(await move(port, { ...initial, moveNo: 3 })), first);
+  const list = await jsonOk(await gamesApi(port));
+  assert.deepEqual(list.map(({ id }) => id), ['sandbox#3', 'sandbox#2', 'sandbox']);
+});
+
+test('на границе лимита сессий сохраняется старая активная партия', async (t) => {
+  let now = 100_000;
+  t.mock.method(Date, 'now', () => now);
+  const port = await start(t, { dashboardToken: TOKEN });
+  const initial = { moveNo: 1, points: { red: [], blue: [] }, last: null };
+  const keep = await jsonOk(await move(port, { ...initial, gameId: 'keep' }));
+  now += 1;
+  await jsonOk(await move(port, { ...initial, gameId: 'sandbox' }));
+  now += 30_000;
+  assert.deepEqual(await jsonOk(await move(port, { ...initial, gameId: 'keep' })), keep);
+  assert.equal((await jsonOk(await gamesApi(port, '/api/games/sandbox'))).active, false);
+  for (let width = 6; width < 25; width++) {
+    await jsonOk(await move(port, { ...initial, gameId: 'sandbox', field: { width, height: 4 } }));
+  }
+  const list = await jsonOk(await gamesApi(port));
+  assert.equal(list.length, 20);
+  assert.equal(list[0].id, 'sandbox#20');
+  assert.ok(list.some((item) => item.id === 'keep' && item.active));
+  assert.equal((await gamesApi(port, '/api/games/sandbox')).status, 404);
+});
+
+test('панель удерживает ручной выбор, переключается при слежении и заменяет вытесненную сессию', async () => {
+  const page = await readFile(new URL('../dashboard/index.html', import.meta.url), 'utf8');
+  const script = page.match(/<script id="game-selection">([\s\S]*?)<\/script>/)[1];
+  const chooseSession = runInNewContext(`${script}\nchooseSession`);
+  const old = { id: 'sandbox', startedAt: 10, active: true };
+  const latest = { id: 'sandbox#2', startedAt: 20, active: true };
+  const games = [old, latest];
+  assert.equal(chooseSession(games, [latest], old.id, false), old.id);
+  assert.equal(chooseSession(games, games, old.id, true), latest.id);
+  assert.equal(chooseSession([latest], [latest], old.id, false), latest.id);
+  assert.equal(chooseSession(games, [old], null, true), old.id);
+});
+
 test('метрики открыты, а список и отдельная партия защищены токеном панели', async (t) => {
-  const configured = await start(t, { dashboardToken: TOKEN });
+  const previous = process.env.DASHBOARD_TOKEN;
+  process.env.DASHBOARD_TOKEN = TOKEN;
+  t.after(() => {
+    if (previous === undefined) delete process.env.DASHBOARD_TOKEN;
+    else process.env.DASHBOARD_TOKEN = previous;
+  });
+  const configured = await start(t);
   const closed = await start(t, { dashboardToken: '', serveDashboard: false });
   for (const port of [configured, closed]) {
     const stats = await jsonOk(await api(port, '/api/status'));
@@ -118,15 +204,21 @@ test('метрики открыты, а список и отдельная па�
     assert.equal(stats.moves, 0);
     assert.equal(stats.lastRequestAt, null);
     assert.equal(stats.games, undefined);
+    assert.ok(!JSON.stringify(stats).includes(TOKEN));
   }
   for (const path of ['/api/games', '/api/games/any', '/api/recent-moves']) {
     const forbidden = await gamesApi(closed, path);
     assert.equal(forbidden.status, 403);
-    assert.match((await forbidden.json()).error.message, /задайте DASHBOARD_TOKEN/i);
-    const unauthorized = await gamesApi(configured, path, 'wrong-dashboard-test');
-    assert.equal(unauthorized.status, 401);
-    assert.equal((await unauthorized.json()).error.code, 'unauthorized');
-    assert.equal((await api(configured, `${path}?token=${TOKEN}`)).status, 401);
+    const unavailable = await forbidden.text();
+    assert.match(JSON.parse(unavailable).error.message, /задайте DASHBOARD_TOKEN/i);
+    assert.ok(!unavailable.includes(TOKEN));
+    for (const unauthorized of [await api(configured, path), await gamesApi(configured, path, WRONG_TOKEN),
+      await api(configured, `${path}?token=${TOKEN}`)]) {
+      assert.equal(unauthorized.status, 401);
+      const body = await unauthorized.text();
+      assert.equal(JSON.parse(body).error.code, 'unauthorized');
+      assert.ok(!body.includes(TOKEN) && !body.includes(WRONG_TOKEN));
+    }
   }
   assert.deepEqual(await jsonOk(await gamesApi(configured)), []);
   assert.equal((await gamesApi(configured, '/api/games/any')).status, 404);
@@ -143,6 +235,7 @@ test('лента содержит 10 последних успешных ход�
   const rejected = await move(port, { gameId: 'recent-0', moveNo: 12 }, { 'Content-Type': 'text/plain' });
   assert.equal(rejected.status, 415);
   const recent = await jsonOk(await gamesApi(port, route));
+  assert.ok(!JSON.stringify(recent).includes(TOKEN));
   assert.deepEqual(recent.map((entry) => entry.moveNo), [10, 11, 9, 8, 7, 6, 5, 4, 3, 2]);
   assert.equal(recent[0].gameId, 'recent-0');
   assert.equal(recent[1].gameId, 'recent-1');
@@ -161,6 +254,7 @@ test('история хранит ходы, режим и последний с�
   const next = await jsonOk(await move(port, { moveNo: 4, points, last }, headers));
   assert.deepEqual(await jsonOk(await move(port, {}, headers)), first);
   const list = await jsonOk(await gamesApi(port));
+  assert.ok(!JSON.stringify(list).includes(TOKEN));
   assert.equal(list.length, 1);
   assert.equal(list[0].id, position.gameId);
   assert.equal(list[0].mode, 'round');
