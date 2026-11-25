@@ -3,7 +3,10 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { addDashboardAccessControls } from './dashboard-access.js';
 import { fileURLToPath } from 'node:url';
-import { applyMove } from '../bot/index.js';
+import { applyMove, BOT_VERSION } from '../bot/index.js';
+import {
+  DASHBOARD_SCHEMA_VERSION, REPLAY_BYTES_PER_GAME, describeAnalysis, moveAnalysis, replayBytes, replayDelta,
+} from './dashboard-analysis.js';
 
 const ROOT = fileURLToPath(new URL('../dashboard', import.meta.url));
 const ROOT_PREFIX = ROOT + path.sep;
@@ -144,7 +147,7 @@ function describeGame(game) {
   const { id, gameId, field, startedAt, lastActivityAt } = game.session;
   return {
     id, gameId, title: game.opponentDomain ? `${game.opponentDomain} · ${id}` : id,
-    opponentDomain: game.opponentDomain ?? null, field, startedAt, lastActivityAt, active: game.session.endedAt === undefined,
+    opponentDomain: game.opponentDomain ?? null, field, startedAt: game.historyStartedAt ?? startedAt, lastActivityAt, active: game.session.endedAt === undefined,
     mode: game.mode, you: game.snapshot.you,
     moveCount: game.moves.size, revision: game.sequence, lastMoveAt: game.lastMoveAt,
     score: game.snapshot.score,
@@ -157,6 +160,8 @@ export function createDashboard({ historyFile } = {}) {
   let recent = [];
   const deleted = new Map();
   const responses = new WeakMap();
+  const analysis = new WeakMap();
+  const prefixes = new WeakMap();
   let moves = 0;
   let totalMs = 0;
   let maxMs = 0;
@@ -242,8 +247,67 @@ export function createDashboard({ historyFile } = {}) {
     scheduleSave();
   }
 
+  function gameAnalysis(game) {
+    let cached = analysis.get(game);
+    if (cached?.revision !== game.sequence || cached.endedAt !== game.session.endedAt) {
+      const after = game.snapshot.scoreAfter ? { score: game.snapshot.scoreAfter } : null;
+      cached = {
+        revision: game.sequence, endedAt: game.session.endedAt, exportedAt: new Date().toISOString(),
+        summary: describeAnalysis(game, after, BOT_VERSION),
+      };
+      analysis.set(game, cached);
+    }
+    return cached;
+  }
+
+  function rememberRecent(game, record) {
+    const { gameId, id: sessionId } = game.session;
+    const { moveNo, you, last, move, fallback, receivedAt } = record;
+    const previous = recent.findIndex(entry => entry.sessionId === sessionId && entry.moveNo === moveNo);
+    if (previous !== -1) recent.splice(previous, 1);
+    recent.unshift({ gameId, sessionId, moveNo, you, last, move, fallback, receivedAt });
+    if (recent.length > MAX_RECENT_MOVES) recent.pop();
+  }
+
+  function movePrefix(session, field, moveNo) {
+    for (const previous of games.values()) {
+      if (previous.session.gameId !== session.gameId || previous.session.id === session.id) continue;
+      const prefix = prefixes.get(previous);
+      if (!prefix) continue;
+      prefixes.delete(previous);
+      if (moveNo !== prefix.moveNo + 2 ||
+          field.width !== previous.session.field.width || field.height !== previous.session.field.height) continue;
+
+      // Только подтверждённая смена сессии переносит предшествовавшие точные повторы.
+      const records = Array.from(previous.moves).filter(([key]) => key >= prefix.firstKey);
+      if (!records.length) continue;
+      const transferred = new Set(records.map(([, item]) => item.moveNo));
+      recent = recent.filter(entry => entry.sessionId !== previous.session.id || !transferred.has(entry.moveNo));
+      for (const [key, record] of records) {
+        previous.moves.delete(key);
+        previous.replayBytes = Math.max(0, (previous.replayBytes ?? 0) - replayBytes(record));
+      }
+      previous.sequence++;
+      previous.lastMoveAt = Array.from(previous.moves.values()).reduce((latest, item) =>
+        Math.max(latest, item.receivedAt), previous.snapshot.receivedAt);
+      return { records, snapshot: prefix.snapshot };
+    }
+    return null;
+  }
+
+  function appendMove(game, record) {
+    game.sequence++;
+    game.moves.set(game.sequence, record);
+    game.replayBytes = (game.replayBytes ?? 0) + replayBytes(record);
+    if (game.moves.size > MAX_MOVES) {
+      const oldest = game.moves.keys().next().value;
+      game.replayBytes -= replayBytes(game.moves.get(oldest));
+      game.moves.delete(oldest);
+    }
+  }
+
   return {
-    record({ request, session, mode, opponent, move, fallback, receivedAt, durationMs, status }) {
+    record({ request, session, mode, opponent, move, fallback, receivedAt, durationMs, status, replayed = false }) {
       lastRequestAt = Math.max(lastRequestAt ?? receivedAt, receivedAt);
       if (status === 200) {
         moves += 1;
@@ -257,16 +321,69 @@ export function createDashboard({ historyFile } = {}) {
       clean();
       if (deleted.has(session.id) || session.historyDeleted) return;
 
-      const { gameId, moveNo, you, last, points } = request;
+      const { moveNo, you, last, points } = request;
       const { width, height } = request.field;
       const field = { width, height };
       const score = readScore(request.score);
       const arenaMode = MODES.has(mode) ? mode : 'unknown';
       const record = { moveNo, mode: arenaMode, you, field, last: last ?? null, move, durationMs, fallback, score, receivedAt, status };
-      const game = games.get(session.id) ?? { session, moves: new Map(), sequence: 0, mode: 'unknown' };
-      if (!game.snapshot || moveNo > game.snapshot.moveNo ||
+      let game = games.get(session.id);
+      if (!game) {
+        game = { session, moves: new Map(), sequence: 0, mode: 'unknown' };
+        const prefix = movePrefix(session, field, moveNo);
+        if (prefix) {
+          game.historyStartedAt = prefix.records[0][1].receivedAt;
+          game.snapshot = prefix.snapshot;
+          for (const [, item] of prefix.records) {
+            appendMove(game, item);
+            rememberRecent(game, item);
+          }
+        }
+      }
+
+      let prefix = prefixes.get(game);
+      const opening = you === 'red' ? 1 : 2;
+      const beginsPrefix = replayed && moveNo === opening && moveNo < game.snapshot?.moveNo && prefix?.moveNo !== opening;
+      const continuesPrefix = replayed && prefix && (moveNo === prefix.moveNo || moveNo === prefix.moveNo + 2);
+      if (beginsPrefix) prefix = { firstKey: game.sequence + 1 };
+      if (!beginsPrefix && !continuesPrefix) {
+        prefixes.delete(game);
+        prefix = undefined;
+      }
+
+      const snapshot = { ...record, points: { red: points.red, blue: points.blue }, dead: readDead(request.dead, field) };
+      let budget = REPLAY_BYTES_PER_GAME - (game.replayBytes ?? 0);
+      const previous = prefix ? prefix.snapshot : game.snapshot;
+      if (previous && moveNo > previous.moveNo) {
+        const delta = replayDelta(previous, snapshot, budget);
+        if (delta) {
+          record.deadDelta = delta;
+          budget -= replayBytes(record);
+        }
+      }
+      let after = null;
+      if (width * height <= 10_000) {
+        try { after = positionAfterResponse(snapshot); } catch {
+          // Ошибка расчёта статистики не исключает ход из истории.
+        }
+      }
+      Object.assign(record, moveAnalysis(request, snapshot, after, budget));
+      Object.assign(snapshot, record);
+      if (prefix) {
+        prefix.moveNo = moveNo;
+        // Один временный снимок небольшого поля помогает связать первую дельту новой партии.
+        if (points.red.length + points.blue.length <= 400 &&
+            snapshot.dead.red.length + snapshot.dead.blue.length <= 400) prefix.snapshot = snapshot;
+        else prefix.snapshot = undefined;
+        prefixes.set(game, prefix);
+      } else if (!game.snapshot || moveNo > game.snapshot.moveNo ||
           (moveNo === game.snapshot.moveNo && receivedAt >= game.snapshot.receivedAt)) {
-        game.snapshot = { ...record, points: { red: points.red, blue: points.blue }, dead: readDead(request.dead, field) };
+        if (moveNo === game.snapshot?.moveNo && game.snapshot.deadDelta && !record.deadDelta) {
+          snapshot.deadDelta = game.snapshot.deadDelta;
+        }
+        game.snapshot = snapshot;
+        if (after) responses.set(snapshot, { ...snapshot, ...after, points: after.points, dead: after.dead,
+          score: after.score, deadDelta: snapshot.deadDelta });
       }
       if (!game.opponentDomain) {
         game.opponentDomain = opponentHostname(
@@ -276,9 +393,7 @@ export function createDashboard({ historyFile } = {}) {
       }
       if (arenaMode !== 'unknown') game.mode = arenaMode;
       game.lastMoveAt = Math.max(game.lastMoveAt ?? receivedAt, receivedAt);
-      game.sequence += 1;
-      game.moves.set(game.sequence, record);
-      if (game.moves.size > MAX_MOVES) game.moves.delete(game.moves.keys().next().value);
+      appendMove(game, record);
       games.set(session.id, game);
       if (games.size > MAX_GAMES) {
         const oldest = Array.from(games.values()).reduce((a, b) => compareActivity(a, b) <= 0 ? a : b);
@@ -287,12 +402,7 @@ export function createDashboard({ historyFile } = {}) {
 
       dirty = true;
       scheduleSave();
-      if (status === 200) {
-        const previous = recent.findIndex((entry) => entry.sessionId === session.id && entry.moveNo === moveNo);
-        if (previous !== -1) recent.splice(previous, 1);
-        recent.unshift({ gameId, sessionId: session.id, moveNo, you, last: record.last, move, fallback, receivedAt });
-        if (recent.length > MAX_RECENT_MOVES) recent.pop();
-      }
+      if (status === 200) rememberRecent(game, record);
     },
     flush,
     sessionChanged() {
@@ -340,23 +450,43 @@ export function createDashboard({ historyFile } = {}) {
     },
     list() {
       clean();
-      return Array.from(games.values()).sort((a, b) => compareActivity(b, a)).map(describeGame);
+      return Array.from(games.values()).sort((a, b) => compareActivity(b, a)).map(game => {
+        const { gaps, ...summary } = gameAnalysis(game).summary;
+        return { ...describeGame(game), ...summary };
+      });
     },
     hasSession(id) {
       return games.has(id) || deleted.has(id);
     },
     recent() {
       clean();
-      return recent.filter((entry) => games.has(entry.sessionId));
+      if (!recent.length && games.size) {
+        // Старые файлы истории могли не содержать отдельной ленты.
+        const latest = [];
+        for (const game of games.values()) {
+          for (const record of game.moves.values()) {
+            if (record.status !== 200 || !record.move) continue;
+            const duplicate = latest.findIndex(entry => entry.game === game && entry.record.moveNo === record.moveNo);
+            if (duplicate !== -1) latest.splice(duplicate, 1);
+            const next = latest.findIndex(entry => entry.record.receivedAt > record.receivedAt);
+            latest.splice(next === -1 ? latest.length : next, 0, { game, record });
+            if (latest.length > MAX_RECENT_MOVES) latest.shift();
+          }
+        }
+        for (const { game, record } of latest) rememberRecent(game, record);
+        if (recent.length) { dirty = true; scheduleSave(); }
+      }
+      return recent;
     },
     get(id) {
       clean();
       const game = games.get(id);
       if (!game) return null;
       if (!responses.has(game.snapshot)) responses.set(game.snapshot, positionAfterResponse(game.snapshot));
+      const { summary, exportedAt } = gameAnalysis(game);
       return {
-        ...describeGame(game),
-        moves: Array.from(game.moves.values()),
+        ...describeGame(game), ...summary, schemaVersion: DASHBOARD_SCHEMA_VERSION, exportedAt,
+        moves: Array.from(game.moves.values(), record => ({ ...record, latencyMs: record.durationMs })),
         snapshot: game.snapshot,
         afterResponse: responses.get(game.snapshot),
       };
