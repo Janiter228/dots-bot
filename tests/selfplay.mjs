@@ -80,6 +80,8 @@ for (const opponentName of opponents) {
     let draws = 0;
     let losses = 0;
     let difference = 0;
+    let pointsFor = 0;
+    let pointsAgainst = 0;
     let partial = 0;
     let timeouts = 0;
     for (let pair = 0; pair < pairs; pair++) {
@@ -117,6 +119,8 @@ for (const opponentName of opponents) {
         }
         if (!game.full && !forfeited && timeLeftMs > 0) partial++;
         const delta = game.scoreOf(playerColor) - game.scoreOf(opp(playerColor));
+        pointsFor += game.scoreOf(playerColor);
+        pointsAgainst += game.scoreOf(opp(playerColor));
         difference += delta;
         const result = forfeited ? (forfeited === playerColor ? -1 : 1) : delta;
         if (result > 0) wins++;
@@ -127,6 +131,7 @@ for (const opponentName of opponents) {
     const games = pairs * 2;
     console.log(JSON.stringify({
       player: playerName, playerFlags, opponent: opponentName, opponentFlags, size, seed, games, wins, draws, losses,
+      meanPointsFor: pointsFor / games, meanPointsAgainst: pointsAgainst / games,
       meanScoreDifference: difference / games, winRate95: wilson(wins, games), moveTimeoutMs,
       maxPlies: maxPlies === Infinity ? null : maxPlies, partial, timeouts,
     }));

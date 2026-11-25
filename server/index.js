@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BOT_VERSION } from '../bot/index.js';
 import { infiniteFallback } from '../bot/field-profile.js';
+import { responseLimit } from '../bot/time-budget.js';
 import { computeMove } from './compute-move.js';
 import { createDashboard, serveDashboardFile } from './dashboard.js';
 import { DASHBOARD_SCHEMA_VERSION } from './dashboard-analysis.js';
@@ -13,7 +14,6 @@ import { pipeline } from 'node:stream/promises';
 import { createDashboardAccess } from './dashboard-access.js';
 import { createGameLogs } from './game-logs.js';
 
-const PORT = Number(process.env.PORT || 4003);
 const BODY_LIMIT_BYTES = 8 * 1024 * 1024;
 const MAX_CACHED_GAMES = 128;
 const MAX_CACHED_MOVES = 3000;
@@ -512,10 +512,19 @@ export function createBotServer({
         return;
       }
 
+      const uploadTimer = setTimeout(() => {
+        if (res.destroyed || res.writableEnded) return;
+        res.setHeader('Connection', 'close');
+        sendError(res, 408, 'request_timeout', 'Истекло время получения позиции');
+      }, responseLimit());
+      uploadTimer.unref();
       let request;
       try {
         request = await readJson(req);
+        if (res.writableEnded) return;
       } catch (error) {
+        clearTimeout(uploadTimer);
+        if (res.writableEnded || res.destroyed) return;
         sendError(
           res,
           error.statusCode || 400,
@@ -525,6 +534,7 @@ export function createBotServer({
         return;
       }
 
+      clearTimeout(uploadTimer);
       const validationError = validateMoveRequest(request);
       if (validationError) {
         sendError(res, 400, 'bad_request', validationError);
@@ -598,7 +608,7 @@ export function createBotServer({
       if (res.destroyed) cancel();
       let move;
       try {
-        move = await computeMove(request, cancellation.signal);
+        move = pointCount === 0 ? findAnyFreeMove(request) : await computeMove(request, cancellation.signal, startedAt);
         if (cancellation.signal.aborted) return;
         // Не позволяем ошибке алгоритма превратиться в пропуск хода.
         // Если стратегия вернула некорректную клетку, выбираем любую свободную.
@@ -612,10 +622,7 @@ export function createBotServer({
         console.error('Ошибка при выборе хода:', error);
         fallback = true;
         move = findAnyFreeMove(request);
-        if (!move) {
-          sendError(res, 500, 'bot_error', 'Не удалось выбрать ход');
-          return;
-        }
+
       } finally {
         res.off('close', cancel);
       }
@@ -658,11 +665,16 @@ const isMainModule = process.argv[1] &&
   fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 
 if (isMainModule) {
-  try {
-    process.loadEnvFile(fileURLToPath(new URL('.env', import.meta.url)));
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
+  for (const file of ['../.env', '.env']) {
+    try {
+      process.loadEnvFile(fileURLToPath(new URL(file, import.meta.url)));
+      break;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
   }
+  const PORT = Number(process.env.PORT || 4003);
+  responseLimit();
   const historyFile = path.join(process.env.GAME_LOG_DIR || fileURLToPath(new URL('../data', import.meta.url)),
     'dashboard-history.json');
   const dashboard = createDashboard({ historyFile });
