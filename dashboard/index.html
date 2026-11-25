@@ -116,6 +116,20 @@
     th, td { padding: .55rem .75rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
     th { position: sticky; top: 0; color: var(--muted); background: var(--panel); font-size: .82rem; }
     td { font-size: .88rem; }
+    .address-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem .65rem; }
+    .arena-menu { position: relative; }
+    .arena-menu summary {
+      min-height: 2.6rem; padding: .45rem .7rem; border: 1px solid var(--line);
+      border-radius: 5px; background: var(--surface); cursor: pointer;
+    }
+    .arena-menu summary:hover, .arena-menu[open] summary { border-color: var(--accent); }
+    .arena-menu ul {
+      position: absolute; z-index: 4; inset-inline-start: 0; top: calc(100% + .25rem);
+      min-width: 100%; padding: .25rem; margin: 0; list-style: none;
+      background: var(--surface); border: 1px solid var(--line); border-radius: 5px;
+    }
+    .arena-menu a { display: block; padding: .4rem .6rem; color: var(--ink); border-radius: 3px; }
+    .arena-menu a:hover, .arena-menu a:focus-visible { color: var(--accent); background: var(--panel); }
     .game-picker { scroll-margin-top: 10rem; }
     .archive-controls { display: grid; gap: .45rem; margin: .7rem 0; }
     .archive-actions, .board-tools { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
@@ -198,8 +212,19 @@
         <div><dt>Запасные</dt><dd id="fallbacks">—</dd></div>
         <div><dt>Ошибки</dt><dd id="errors">—</dd></div>
       </dl>
-      <button id="copy-address" type="button">Скопировать адрес бота</button>
-      <span id="copy-message" class="caption" role="status"></span>
+      <div class="address-actions">
+        <button id="copy-address" type="button">Скопировать адрес бота</button>
+        <details id="arena-menu" class="arena-menu">
+          <summary>Перейти на сайт Арены</summary>
+          <ul>
+            <li><a href="https://arena.projectset.ru/" target="_blank" rel="noopener noreferrer">Главная</a></li>
+            <li><a href="https://arena.projectset.ru/sandbox?p=dots" target="_blank" rel="noopener noreferrer">Песочница</a></li>
+            <li><a href="https://arena.projectset.ru/student" target="_blank" rel="noopener noreferrer">Студентам</a></li>
+            <li><a href="https://arena.projectset.ru/docs" target="_blank" rel="noopener noreferrer">Спецификации</a></li>
+          </ul>
+        </details>
+        <span id="copy-message" class="caption" role="status"></span>
+      </div>
     </section>
     <section id="recent" class="box recent" aria-labelledby="recent-title" hidden>
       <header class="box-head"><h2 id="recent-title">Последние ходы</h2><span class="caption">Все партии</span></header>
@@ -1321,6 +1346,16 @@
       } catch {
         notice('copy-message', `Адрес бота: ${location.origin}`);
       }
+    });
+    const arenaMenu = byId('arena-menu');
+    document.addEventListener('click', (event) => {
+      if (arenaMenu.open && !arenaMenu.contains(event.target)) arenaMenu.open = false;
+    });
+    arenaMenu.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || !arenaMenu.open) return;
+      event.preventDefault();
+      arenaMenu.open = false;
+      arenaMenu.querySelector('summary').focus();
     });
     const restartDialog = byId('restart-dialog');
     const restartForm = byId('restart-form');
