@@ -140,6 +140,16 @@ test('ZIP: авторизация, безопасные имена, манифе
   assert.equal((await api(route + '?ids=missing', { headers: auth })).status, 404);
 });
 
+test('имена файлов ZIP подходят для Windows и файловых систем с лимитом 255 байт', async (t) => {
+  const api = await start(t);
+  await play(api, { ...opening, gameId: 'CON' });
+  await play(api, { ...opening, gameId: '𠀀'.repeat(90) });
+  const response = await api('/api/games/export.zip', { headers: auth });
+  const files = unzip(Buffer.from(await response.arrayBuffer()));
+  assert.ok(files.has('_CON.json'));
+  assert.ok([...files.keys()].every(name => Buffer.byteLength(name) <= 255));
+});
+
 test('ZIP отклоняет суммарный объём JSON свыше 100 МБ', async (t) => {
   const dashboard = createDashboard();
   t.mock.method(dashboard, 'list', () => [{ id: 'large' }]);
