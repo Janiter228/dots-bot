@@ -1,5 +1,5 @@
 /**
- * Dots Bot v0.4.0 — поиск с приоритетом защиты от немедленного захвата.
+ * Dots Bot v0.5.0 — поиск с приоритетом защиты от немедленного захвата.
  *
  * Что делает алгоритм:
  *  - использует правила связности из спецификации: точки соединяются по 8
@@ -16,6 +16,7 @@
  * На безграничном поле используется разреженный позиционный выбор без minimax.
  */
 
+import { requestBudget, responseLimit } from './time-budget.js';
 import { analyzePosition } from './position-analysis.js';
 import { proveForkGain, unavoidableForkLoss } from './fork-defense.js';
 import { solveEndgame } from './endgame.js';
@@ -38,12 +39,12 @@ export const TACTICS = {
   frontierAnalysis: false,
   forkDefense: false,
   forcingAttack: false,
-  exactEndgame: false,
+  exactEndgame: true,
   profile: undefined,
 };
 
 const CONFIG = {
-  maxThinkMs: 475,
+  maxThinkFraction: 0.2375,
   thinkFraction: 0.52,
   gameClockDivisor: 120,
   rootMoves: 28,
@@ -259,7 +260,7 @@ function positionalScore(
   return score;
 }
 
-function generateCandidateIndices(board, width, height, ownCode, enemyCode, limit, forbiddenMask, enemyTerritory) {
+function generateCandidateIndices(board, width, height, ownCode, enemyCode, limit, forbiddenMask, enemyTerritory, ownGroups, enemyGroups) {
   const size = board.length;
   const marked = new Uint8Array(size);
   const candidates = [];
@@ -328,8 +329,6 @@ function generateCandidateIndices(board, width, height, ownCode, enemyCode, limi
     }
   }
 
-  const ownGroups = buildGroups(board, width, height, ownCode);
-  const enemyGroups = buildGroups(board, width, height, enemyCode);
   const ranked = candidates.map((index) => ({
     index,
     positional: positionalScore(
@@ -445,7 +444,7 @@ function captureMoves(board, width, height, wall, target, enemyTerritory, redCod
 }
 
 function rankMoves(board, width, height, playerCode, enemyCode, limit, deadline,
-  ownTerritory, enemyTerritory, forced, redCode, analysis) {
+  ownTerritory, enemyTerritory, forced, redCode, analysis, advice) {
   // Любая клетка внутри закрытой области нежелательна:
   // - в чужой территории наша точка сразу погибнет и даст сопернику очко;
   // - в своей территории ход не приносит очков и расходует очередь, хотя
@@ -455,17 +454,20 @@ function rankMoves(board, width, height, playerCode, enemyCode, limit, deadline,
     if (ownTerritory[i] || enemyTerritory[i]) forbiddenMask[i] = 1;
   }
 
-  const rawCandidates = generateCandidateIndices(
-    board, width, height, playerCode, enemyCode,
-    Math.max(limit * CONFIG.oversample, limit), forbiddenMask, enemyTerritory,
-  );
   const groupsOwn = analysis?.own ?? buildGroups(board, width, height, playerCode);
   const groupsEnemy = analysis?.enemy ?? buildGroups(board, width, height, enemyCode);
+  const rawCandidates = generateCandidateIndices(
+    board, width, height, playerCode, enemyCode,
+    Math.max(limit * CONFIG.oversample, limit), forbiddenMask, enemyTerritory, groupsOwn, groupsEnemy,
+  );
   const liveTotal = countLive(board, playerCode) + countLive(board, enemyCode);
   const ranked = [];
 
   for (const index of new Set([...forced, ...rawCandidates])) {
-    if (performance.now() >= deadline) return null;
+    if (performance.now() >= deadline) {
+      if (!ranked.length || playerCode !== OUR_LIVE) return null;
+      break;
+    }
     const simulation = applyMove(
       board, index, width, height, playerCode, enemyCode, enemyTerritory, redCode,
     );
@@ -479,7 +481,7 @@ function rankMoves(board, width, height, playerCode, enemyCode, limit, deadline,
     const cut = analysis?.enemy.cuts.get(index);
     const frontierBonus = (connection?.contested ? 12 : 0) + (cut?.contested ? 8 : 0);
     const score = simulation.captured * WEIGHTS.orderingCapture + frontierBonus
-      + position
+      + position + (advice?.(board, index, width, height) ?? 0)
       - (simulation.selfCaptured ? WEIGHTS.selfCapturePenalty : 0);
 
     ranked.push({
@@ -496,6 +498,28 @@ function rankMoves(board, width, height, playerCode, enemyCode, limit, deadline,
   const required = new Set(forced);
   return ranked.filter(({ index }) => required.has(index))
     .concat(shortlist.filter(({ index }) => !required.has(index)));
+}
+
+// Project only straight one-cell gaps. A virtual wall changes the search
+// heuristic, never the live board or the official capture count.
+function projectedPressure(board, width, height, wall, victim) {
+  const projected = board.slice();
+  for (let y = 1; y + 1 < height; y++) {
+    for (let x = 1; x + 1 < width; x++) {
+      const i = y * width + x;
+      if (board[i] !== EMPTY) continue;
+      if ((board[i - 1] === wall && board[i + 1] === wall)
+          || (board[i - width] === wall && board[i + width] === wall)
+          || (board[i - width - 1] === wall && board[i + width + 1] === wall)
+          || (board[i - width + 1] === wall && board[i + width - 1] === wall)) projected[i] = wall;
+    }
+  }
+  const inside = enclosed(projected, width, height, wall);
+  let value = 0;
+  for (let i = 0; i < board.length; i++) {
+    if (inside[i]) value += board[i] === victim ? 100 : board[i] === EMPTY ? 4 : 0;
+  }
+  return value;
 }
 
 /**
@@ -520,12 +544,16 @@ function evaluatePosition(board, width, height) {
     return value;
   }
 
+  const pressure = board.length >= 100 && board.length <= 2500
+    ? projectedPressure(board, width, height, OUR_LIVE, ENEMY_LIVE)
+      - projectedPressure(board, width, height, ENEMY_LIVE, OUR_LIVE)
+    : 0;
   let ownFrontier = 0;
   let enemyFrontier = 0;
   for (let index = 0; index < board.length; index += 1) {
-    if (board[index] !== EMPTY) continue;
     const x = index % width;
     const y = Math.floor(index / width);
+    if (board[index] !== EMPTY) continue;
     let nearOwn = false;
     let nearEnemy = false;
     for (const [dx, dy] of NEIGHBORS_8) {
@@ -542,7 +570,7 @@ function evaluatePosition(board, width, height) {
   }
 
   return enemyDead * WEIGHTS.captured - ownDead * WEIGHTS.lost
-    + (ownLive - enemyLive) * WEIGHTS.live
+    + pressure + (ownLive - enemyLive) * WEIGHTS.live
     + (groupValue(ownGroups.sizes) - groupValue(enemyGroups.sizes))
       * WEIGHTS.connectivity
     + (ownFrontier - enemyFrontier) * WEIGHTS.frontier;
@@ -711,16 +739,19 @@ function chooseInfiniteMove(request, deadline) {
   return best;
 }
 
-export function chooseMove(request) {
+export function chooseMove(request, { advice, checkpoint } = {}) {
   const started = performance.now();
-  const requestedTimeout = Number.isFinite(request.moveTimeoutMs)
-    ? request.moveTimeoutMs
-    : 5_000;
+  const limit = responseLimit();
+  const requestedTimeout = requestBudget(request, limit);
+  const remainingCells = request.field.infinite ? 0 : request.field.width * request.field.height
+    - request.points.red.length - request.points.blue.length;
+  const expectedTurns = Math.ceil(remainingCells / 2);
   const clockBudget = Number.isFinite(request.timeLeftMs)
-    ? request.timeLeftMs / CONFIG.gameClockDivisor
+    ? Math.max(0, request.timeLeftMs / Math.max(CONFIG.gameClockDivisor, expectedTurns)
+      - (expectedTurns > CONFIG.gameClockDivisor ? 50 : 0))
     : Infinity;
   const thinkBudget = Math.max(0, Math.min(
-    CONFIG.maxThinkMs,
+    limit * CONFIG.maxThinkFraction,
     requestedTimeout * CONFIG.thinkFraction,
     clockBudget,
   ));
@@ -744,10 +775,47 @@ export function chooseMove(request) {
     return moveAt(findFreeIndex(board, width, height, ours, enemy));
   }
 
+  if (TACTICS.exactEndgame && freeCount <= 7 && board.length <= 400) {
+    try {
+      const endgameDeadline = Math.min(deadline, performance.now() + thinkBudget * 0.5);
+      const endgame = solveEndgame(board, (position, index, color) =>
+        applyMove(position, index, width, height, color, 3 - color, undefined, redCode).board,
+      endgameDeadline);
+      if (endgame?.solved) return moveAt(endgame.move);
+    } catch {
+      // При недоказанном результате остаётся обычный поиск.
+    }
+  }
+
   const rootThreats = threats(board, width, height, redCode);
   const { ours, enemy, attacks, dangers } = rootThreats;
   const safe = findFreeIndex(board, width, height, ours, enemy);
   const blocks = dangers.filter(({ index }) => !enemy[index]);
+  // A long wall can capture an entire group at once. Test the actual swing
+  // after the opponent's largest closures before spending time on quiet moves.
+  if ((dangers[0]?.count ?? 0) >= 3 && blocks.length && performance.now() < deadline) {
+    const urgent = new Set([...blocks.slice(0, 4), ...attacks.slice(0, 4)].map(m => m.index));
+    let best = -1;
+    let bestFloor = -Infinity;
+    const initial = countLive(board, ENEMY_DEAD) - countLive(board, OUR_DEAD);
+    for (const index of urgent) {
+      if (performance.now() >= deadline) break;
+      const next = applyMove(board, index, width, height, OUR_LIVE, ENEMY_LIVE, enemy, redCode).board;
+      const ownZone = enclosed(next, width, height, OUR_LIVE);
+      const replies = captureMoves(next, width, height, ENEMY_LIVE, OUR_LIVE, ownZone, redCode);
+      const material = position => countLive(position, ENEMY_DEAD) - countLive(position, OUR_DEAD);
+      let floor = material(next);
+      for (const reply of replies.slice(0, 3)) {
+        const after = applyMove(next, reply.index, width, height, ENEMY_LIVE, OUR_LIVE, ownZone, redCode);
+        floor = Math.min(floor, material(after.board));
+      }
+      if (floor > bestFloor) {
+        bestFloor = floor;
+        best = index;
+      }
+    }
+    if (best >= 0 && bestFloor >= initial) return moveAt(best);
+  }
   const quickAttack = dangers.length === 0 && attacks.length === 1 ? attacks[0].index : undefined;
   const quickBlock = dangers.length === 1 && attacks.length === 0 ? blocks[0]?.index : undefined;
   const quick = quickAttack ?? quickBlock;
@@ -765,20 +833,9 @@ export function chooseMove(request) {
   // если таймер не позволил проверить последствия размена.
   const directBlock = dangers.length === 1 ? blocks[0]?.index : undefined;
   const fallback = directBlock ?? attacks[0]?.index ?? blocks[0]?.index ?? safe;
+  checkpoint?.(moveAt(fallback));
   if (performance.now() >= deadline) {
     return moveAt(fallback);
-  }
-
-  if (TACTICS.exactEndgame && profile === 'tiny' && board.length <= 100) {
-    try {
-      const endgameDeadline = Math.min(deadline, performance.now() + thinkBudget * 0.5);
-      const endgame = solveEndgame(board, (position, index, color) =>
-        applyMove(position, index, width, height, color, 3 - color, undefined, redCode).board,
-      endgameDeadline);
-      if (endgame?.solved) return moveAt(endgame.move);
-    } catch {
-      // При недоказанном результате остаётся обычный поиск.
-    }
   }
 
   const forced = [...attacks, ...blocks].map(({ index }) => index);
@@ -798,7 +855,7 @@ export function chooseMove(request) {
   }
   const rootMoves = rankMoves(
     board, width, height, OUR_LIVE, ENEMY_LIVE,
-    CONFIG.rootMoves, ordinaryDeadline, ours, enemy, forced, redCode, analysis,
+    CONFIG.rootMoves, ordinaryDeadline, ours, enemy, forced, redCode, analysis, advice,
   );
   if (!rootMoves?.length) return moveAt(fallback);
   if (directBlock !== undefined) {
@@ -909,6 +966,7 @@ export function chooseMove(request) {
     return moveAt(lossFreeIndex >= 0 ? lossFreeIndex : forced.length ? fallback : rootMoves[0].index);
   }
   const bestIndex = shortlist[0].rootMove.index;
+  checkpoint?.(moveAt(bestIndex));
   let deeperIndex = bestIndex;
   let deeperScore = -Infinity;
   let tactical = false;
@@ -928,4 +986,4 @@ export function chooseMove(request) {
   return moveAt(tactical ? deeperIndex : bestIndex);
 }
 
-export const BOT_VERSION = '0.4.0';
+export const BOT_VERSION = '0.5.0';
