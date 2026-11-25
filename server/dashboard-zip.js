@@ -20,9 +20,11 @@ function crc32(bytes) {
 export class ZipLimitError extends Error {}
 
 export function gameFilename(id, used) {
-  const stem = Array.from(id.normalize('NFKC').replace(/[^\p{L}\p{N}_-]+/gu, '_')).slice(0, 100).join('') || 'партия';
-  let name = stem + '.json';
-  for (let suffix = 2; used.has(name.toLowerCase()); suffix++) name = `${stem}_${suffix}.json`;
+  const stem = Array.from(id.normalize('NFKC').replace(/[^\p{L}\p{N}_-]+/gu, '_')).slice(0, 60).join('') || 'партия';
+  // Короткое UTF-8 имя без зарезервированных имён устройств Windows.
+  const safeStem = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(stem) ? '_' + stem : stem;
+  let name = safeStem + '.json';
+  for (let suffix = 2; used.has(name.toLowerCase()); suffix++) name = `${safeStem}_${suffix}.json`;
   used.add(name.toLowerCase());
   return name;
 }
