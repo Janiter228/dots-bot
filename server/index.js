@@ -195,6 +195,8 @@ export function createBotServer({
   const passwordAccess = serveDashboard && dashboardAccess.enabled;
   const instanceId = randomUUID();
   let restartPending = false;
+  let botEnabled = true;
+  let botStateRevision = 0;
 
   function gameMetadata(record) {
     const snapshot = record.snapshot;
@@ -263,12 +265,13 @@ export function createBotServer({
         return;
       }
       if (req.method === 'GET' && rawPath === '/api/status') {
-        sendJson(res, 200, { ...dashboard.status(BOT_VERSION), gameLogs: gameLogs.status(), instanceId });
+        sendJson(res, 200, { ...dashboard.status(BOT_VERSION), gameLogs: gameLogs.status(), instanceId, botEnabled });
         return;
       }
-      if (serveDashboard && req.method === 'POST' && rawPath === '/api/restart') {
+      if (serveDashboard && req.method === 'POST' && ['/api/restart', '/api/bot-state'].includes(rawPath)) {
+        const changeState = rawPath === '/api/bot-state';
         if (!requireDashboardAccess(req, res)) return;
-        if (!restart || !dashboardAccess.passwordConfigured) {
+        if ((!changeState && !restart) || !dashboardAccess.passwordConfigured) {
           sendError(res, 503, 'restart_unavailable', 'Перезапуск не настроен на сервере');
           return;
         }
@@ -287,6 +290,16 @@ export function createBotServer({
         if (status !== 200) {
           sendError(res, status, status === 429 ? 'too_many_attempts' : 'unauthorized',
             status === 429 ? 'Слишком много попыток' : 'Неверный пароль');
+          return;
+        }
+        if (changeState) {
+          if (typeof body.enabled !== 'boolean') {
+            sendError(res, 400, 'bad_request', 'Укажите логическое значение enabled');
+            return;
+          }
+          if (botEnabled !== body.enabled) botStateRevision++;
+          botEnabled = body.enabled;
+          sendJson(res, 200, { botEnabled });
           return;
         }
         res.once('finish', () => {
@@ -450,6 +463,11 @@ export function createBotServer({
         return;
       }
 
+      if (!botEnabled) {
+        sendError(res, 503, 'bot_disabled', 'Бот выключен');
+        return;
+      }
+      const moveRevision = botStateRevision;
       const uploadTimer = setTimeout(() => {
         if (res.destroyed || res.writableEnded) return;
         res.setHeader('Connection', 'close');
@@ -473,6 +491,10 @@ export function createBotServer({
       }
 
       clearTimeout(uploadTimer);
+      if (moveRevision !== botStateRevision) {
+        sendError(res, 503, 'bot_disabled', 'Приём ходов был приостановлен');
+        return;
+      }
       const validationError = validateMoveRequest(request);
       if (validationError) {
         sendError(res, 400, 'bad_request', validationError);
@@ -564,6 +586,10 @@ export function createBotServer({
         res.off('close', cancel);
       }
       if (res.destroyed || cancellation.signal.aborted) return;
+      if (moveRevision !== botStateRevision) {
+        sendError(res, 503, 'bot_disabled', 'Приём ходов был приостановлен');
+        return;
+      }
       if (!move) {
         session.endedAt ??= Date.now();
         sendError(res, 409, 'no_free_moves', 'На поле не осталось свободных пересечений');
