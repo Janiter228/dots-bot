@@ -39,11 +39,11 @@
     h3 { font-size: 1rem; }
     button, input, select { font: inherit; color: inherit; }
     button, select { cursor: pointer; }
-    button, input, select {
+    button, input, select, .github-link {
       min-height: 2.6rem; padding: .45rem .7rem; border: 1px solid var(--line);
       border-radius: 5px; background: var(--surface);
     }
-    button:hover, select:hover { border-color: var(--accent); }
+    button:hover, select:hover, .github-link:hover { border-color: var(--accent); }
     button:disabled { cursor: default; opacity: .6; }
     :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
     .primary { color: var(--button-ink); background: var(--button); border-color: var(--button); font-weight: bold; }
@@ -53,6 +53,8 @@
     .brand, .tools, .meta { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
     .brand img { width: 3.1rem; height: 3.1rem; }
     .subtitle { color: var(--muted); margin-top: .22rem; font-size: .9rem; }
+    .address-tools { display: flex; flex-wrap: wrap; gap: .7rem; align-items: center; }
+    .github-link { margin-left: auto; display: inline-flex; align-items: center; color: inherit; text-decoration: none; }
     .tools { justify-content: flex-end; }
     .meta { color: var(--muted); font: .78rem/1.5 var(--mono); }
     #health { color: var(--green); font-weight: bold; }
@@ -187,6 +189,7 @@
         <div class="meta"><span id="health" data-state="pending">Проверяем связь</span><span id="version"></span><span id="uptime"></span></div>
         <button id="theme" type="button" aria-label="Переключить тему">Тема</button>
         <button id="refresh" type="button" class="primary">Обновить</button>
+        <button id="toggle-bot" type="button" disabled>Выключить бота</button>
       </div>
     </div>
   </header>
@@ -212,19 +215,11 @@
         <div><dt>Запасные</dt><dd id="fallbacks">—</dd></div>
         <div><dt>Ошибки</dt><dd id="errors">—</dd></div>
       </dl>
-      <div class="address-actions">
+      <div class="address-tools">
         <button id="copy-address" type="button">Скопировать адрес бота</button>
-        <details id="arena-menu" class="arena-menu">
-          <summary>Перейти на сайт Арены</summary>
-          <ul>
-            <li><a href="https://arena.projectset.ru/" target="_blank" rel="noopener noreferrer">Главная</a></li>
-            <li><a href="https://arena.projectset.ru/sandbox?p=dots" target="_blank" rel="noopener noreferrer">Песочница</a></li>
-            <li><a href="https://arena.projectset.ru/student" target="_blank" rel="noopener noreferrer">Студентам</a></li>
-            <li><a href="https://arena.projectset.ru/docs" target="_blank" rel="noopener noreferrer">Спецификации</a></li>
-          </ul>
-        </details>
-        <span id="copy-message" class="caption" role="status"></span>
+        <a class="github-link" href="https://github.com/r8b3rt/dots-bot/tree/main">Перейти на GitHub проект</a>
       </div>
+      <span id="copy-message" class="caption" role="status"></span>
     </section>
     <section id="recent" class="box recent" aria-labelledby="recent-title" hidden>
       <header class="box-head"><h2 id="recent-title">Последние ходы</h2><span class="caption">Все партии</span></header>
@@ -493,6 +488,7 @@
           return;
         }
         const data = status.value;
+        updateBotState(data.botEnabled);
         byId('version').textContent = `v${data.version}`;
         byId('uptime').textContent = uptime(data.uptimeSeconds);
         byId('uptime').title = 'Время работы бота';
@@ -1363,11 +1359,30 @@
     const restartSubmit = restartForm.querySelector('[type=submit]');
     const restartCancel = byId('restart-cancel');
 
-    byId('refresh').addEventListener('click', () => {
+    const toggleBot = byId('toggle-bot');
+    let botEnabled;
+    let requestedState;
+    function updateBotState(enabled) {
+      botEnabled = enabled;
+      toggleBot.disabled = typeof enabled !== 'boolean';
+      toggleBot.textContent = enabled === false ? 'Включить бота' : 'Выключить бота';
+      if (enabled === false) {
+        byId('health').dataset.state = 'pending';
+        byId('health').textContent = 'Бот выключен';
+      }
+    }
+    function openControl(enabled) {
+      requestedState = enabled;
+      byId('restart-label').textContent = enabled === undefined ? 'Пароль для перезапуска бота' :
+        enabled ? 'Пароль для включения бота' : 'Пароль для выключения бота';
+      restartSubmit.textContent = enabled === undefined ? 'Перезапустить' :
+        enabled ? 'Включить бота' : 'Выключить бота';
       restartPassword.value = '';
       notice('restart-message', '');
       restartDialog.showModal();
-    });
+    }
+    byId('refresh').addEventListener('click', () => openControl());
+    toggleBot.addEventListener('click', () => openControl(!botEnabled));
     restartCancel.addEventListener('click', () => restartDialog.close());
     restartDialog.addEventListener('cancel', event => {
       if (restartSubmit.disabled) event.preventDefault();
@@ -1381,8 +1396,19 @@
       const password = restartPassword.value;
       restartPassword.value = '';
       restartSubmit.disabled = restartCancel.disabled = true;
-      notice('restart-message', 'Отправляем запрос на перезапуск…');
+      notice('restart-message', 'Отправляем запрос…');
       try {
+        if (requestedState !== undefined) {
+          const state = await fetchJson('/api/bot-state', {
+            method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password, enabled: requestedState }),
+          });
+          updateBotState(state.botEnabled);
+          restartDialog.close();
+          if (statusRequest) await statusRequest;
+          await refreshStatus();
+          return;
+        }
         const { instanceId } = await fetchJson('/api/restart', {
           method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify({ password }),
@@ -1410,7 +1436,7 @@
       } catch (error) {
         notice('restart-message', error.status === 401 ? 'Неверный пароль или истекла сессия.' :
           error.status === 429 ? 'Слишком много попыток. Попробуйте через минуту.' :
-          error.status === 503 ? 'Перезапуск не настроен на сервере.' : 'Не удалось запросить перезапуск.');
+          error.status === 503 ? 'Управление ботом не настроено на сервере.' : 'Не удалось выполнить команду.');
       } finally {
         restartSubmit.disabled = restartCancel.disabled = false;
       }
