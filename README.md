@@ -3,9 +3,15 @@
 Бот для игры «Точки» (проектный практикум ИРИТ-РТФ, турнирный эмулятор).
 Все работаем в своих ветках!!!
 
+# Турнирный и Серверный сайт
+
 Публичный адрес бота и панели наблюдения — [https://d03.projectset.ru](https://d03.projectset.ru).
 
+Турнирный сайт Arena - [https://arena.projectset.ru/sandbox?p=dots](https://arena.projectset.ru/sandbox?p=dots)
+
 DASHBOARD_TOKEN для просмотра логов из хоста бота - c2aa2b35b55c86dae9f78b46577a961067fd72d8c563f8e2
+
+Пароль от НАШЕГО токена: 0909
 
 ## Быстрый старт
 

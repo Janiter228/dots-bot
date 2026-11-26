@@ -7,6 +7,10 @@ import { infiniteFallback } from '../bot/field-profile.js';
 import { responseLimit } from '../bot/time-budget.js';
 import { computeMove } from './compute-move.js';
 import { createDashboard, serveDashboardFile } from './dashboard.js';
+import { DASHBOARD_SCHEMA_VERSION } from './dashboard-analysis.js';
+import { createZip, gameFilename, ZipLimitError } from './dashboard-zip.js';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { createDashboardAccess } from './dashboard-access.js';
 import { createGameLogs } from './game-logs.js';
 
@@ -236,6 +240,58 @@ export function createBotServer({
     sendError(res, 401, 'unauthorized', 'Введите действующий токен панели');
     return false;
   }
+  async function exportGames(req, res) {
+    const query = new URL(req.url, 'http://localhost').searchParams;
+    const games = dashboard.list();
+    const selection = query.getAll('ids');
+    const ids = new Set(selection.length === 1 && !games.some(game => game.id === selection[0])
+      ? selection[0].split(',') : selection);
+    const chosen = ids.size ? games.filter(game => ids.has(game.id)) : games;
+    if (!chosen.length) {
+      sendError(res, 404, 'no_games', ids.size ? 'Выбранные партии не найдены' : 'В истории нет партий');
+      return;
+    }
+    if (exportPending) {
+      sendError(res, 429, 'export_busy', 'Дождитесь окончания другой выгрузки');
+      return;
+    }
+    exportPending = true;
+    try {
+      const used = new Set(['manifest.json']);
+      const exportedAt = new Date().toISOString();
+      const manifest = { schemaVersion: DASHBOARD_SCHEMA_VERSION, exportedAt, botVersion: BOT_VERSION, files: [] };
+      const files = [];
+      for (const entry of chosen) {
+        const document = dashboard.get(entry.id);
+        if (!document) continue;
+        const { id, mode, field, moveCount, score } = document;
+        const name = gameFilename(id, used);
+        files.push({ name, document });
+        manifest.files.push({ name, id, mode, field, moveCount, score });
+      }
+      if (!files.length) {
+        sendError(res, 404, 'no_games', 'Выбранные партии не найдены');
+        return;
+      }
+      files.push({ name: 'manifest.json', document: manifest });
+      const { chunks, length } = await createZip(files);
+      if (res.destroyed) return;
+      res.writeHead(200, {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': `attachment; filename="games_${exportedAt.slice(0, 10)}.zip"`,
+        'Cache-Control': 'no-store',
+        'Content-Length': length,
+      });
+      await pipeline(Readable.from(chunks), res);
+    } catch (error) {
+      if (res.headersSent || res.destroyed) return;
+      if (error instanceof ZipLimitError) sendError(res, 413, 'archive_too_large', 'Размер выгрузки превышает 100 МБ');
+      else sendError(res, 500, 'export_failed', 'Не удалось подготовить ZIP-архив');
+    } finally {
+      exportPending = false;
+    }
+  }
+
   return http.createServer(async (req, res) => {
     const rawPath = (req.url || '/').split('?', 1)[0];
     if (!rawPath.startsWith('/v1/')) {
@@ -336,6 +392,10 @@ export function createBotServer({
       }
       if (req.method === 'GET' && (rawPath === '/api/recent-moves' || rawPath === '/api/games' || rawPath.startsWith('/api/games/'))) {
         if (!requireDashboardAccess(req, res)) return;
+        if (rawPath === '/api/games/export.zip') {
+          await exportGames(req, res);
+          return;
+        }
         if (rawPath === '/api/games') {
           sendJson(res, 200, dashboard.list());
           return;
@@ -428,6 +488,7 @@ export function createBotServer({
       let position;
       let session;
       let playedMove = null;
+      let replayed = false;
       let fallback = false;
       // Считаем время до отправки и переносим сбор истории за пределы ответа.
       res.once('finish', () => {
@@ -437,7 +498,7 @@ export function createBotServer({
           // Панель и обучающий архив принимают только конечную сетку.
           const finitePosition = position?.field.infinite === true ? undefined : position;
           try {
-            dashboard.record({ request: finitePosition, session, mode, opponent, move: playedMove, fallback, receivedAt, durationMs, status });
+            dashboard.record({ request: finitePosition, session, mode, opponent, move: playedMove, fallback, receivedAt, durationMs, status, replayed });
           } catch {
             dashboard.recordError();
           }
@@ -555,6 +616,7 @@ export function createBotServer({
         if (game.moves.size > MAX_CACHED_MOVES) game.moves.delete(game.moves.keys().next().value);
       }
       if (entry.response) {
+        replayed = true;
         playedMove = entry.response;
         fallback = fallbackResponses.has(playedMove);
         sendJson(res, 200, playedMove);

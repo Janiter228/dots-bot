@@ -48,7 +48,7 @@
     :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
     .primary { color: var(--button-ink); background: var(--button); border-color: var(--button); font-weight: bold; }
     .wrap { width: min(100% - 2.5rem, 78rem); margin: auto; }
-    .masthead { border-bottom: 1px solid var(--line); background: var(--surface); box-shadow: inset 0 3px 0 var(--accent); }
+    .masthead { position: sticky; top: 0; z-index: 5; border-bottom: 1px solid var(--line); background: var(--surface); box-shadow: inset 0 3px 0 var(--accent); }
     .masthead .wrap { display: flex; justify-content: space-between; align-items: center; padding-block: 1.65rem; gap: 1.1rem; flex-wrap: wrap; }
     .brand, .tools, .meta { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
     .brand img { width: 3.1rem; height: 3.1rem; }
@@ -118,6 +118,50 @@
     th, td { padding: .55rem .75rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
     th { position: sticky; top: 0; color: var(--muted); background: var(--panel); font-size: .82rem; }
     td { font-size: .88rem; }
+    .address-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem .65rem; }
+    .arena-menu { position: relative; }
+    .arena-menu summary {
+      min-height: 2.6rem; padding: .45rem .7rem; border: 1px solid var(--line);
+      border-radius: 5px; background: var(--surface); cursor: pointer;
+    }
+    .arena-menu summary:hover, .arena-menu[open] summary { border-color: var(--accent); }
+    .arena-menu ul {
+      position: absolute; z-index: 4; inset-inline-start: 0; top: calc(100% + .25rem);
+      min-width: 100%; padding: .25rem; margin: 0; list-style: none;
+      background: var(--surface); border: 1px solid var(--line); border-radius: 5px;
+    }
+    .arena-menu a { display: block; padding: .4rem .6rem; color: var(--ink); border-radius: 3px; }
+    .arena-menu a:hover, .arena-menu a:focus-visible { color: var(--accent); background: var(--panel); }
+    .game-picker { scroll-margin-top: 10rem; }
+    .archive-controls { display: grid; gap: .45rem; margin: .7rem 0; }
+    .archive-actions, .board-tools { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+    .archive-actions button, .board-tools button { min-height: 2rem; padding: .25rem .5rem; }
+    .archive-scope { display: grid; gap: .25rem; }
+    .archive-scope select { width: 100%; }
+    .games-entry { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .35rem; align-items: start; }
+    .games-entry > input { min-height: 0; margin: .85rem 0 0; accent-color: var(--accent); }
+    .score-bar { display: flex !important; height: .25rem; margin-top: .55rem; background: var(--line); border-radius: 1rem; overflow: hidden; }
+    .score-bar i { background: var(--red); }
+    .score-bar i + i { background: var(--blue); }
+    .mode[data-outcome="win"] { color: var(--green); border-color: var(--green); }
+    .mode[data-outcome="loss"] { color: var(--red); border-color: var(--red); }
+    .mode[data-outcome="draw"] { color: var(--amber); border-color: var(--amber); }
+    .game-analysis { border-bottom: 1px solid var(--line); }
+    .game-analysis dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); margin: .6rem 0 0; gap: .45rem 1rem; }
+    .game-analysis dt { color: var(--muted); font-size: .83rem; }
+    .game-analysis dd { margin: 0; font-variant-numeric: tabular-nums; }
+    .board-tools { border-bottom: 1px solid var(--line); }
+    .board-tools input { min-height: 0; accent-color: var(--accent); }
+    #board[data-zoomed] { touch-action: none; cursor: grab; }
+    #chart { cursor: crosshair; }
+    .chart-tip { min-height: 1.3rem; display: block; }
+    .jump-turn { font: inherit; color: var(--accent); padding: .1rem .3rem; min-height: 0; }
+    #records tr { cursor: pointer; }
+    #records tr:hover { background: var(--panel); }
+    .skeleton { width: 100%; min-height: 4rem; border: 1px solid var(--line); border-radius: .4rem;
+      background: repeating-linear-gradient(0deg, var(--panel) 0 1.4rem, var(--line) 1.4rem 1.45rem); }
+    .board-shell .skeleton { width: min(85%, 24rem); }
+    @media (max-width: 50rem) { .masthead .wrap { padding-block: .75rem; gap: .55rem; } }
     @media (max-width: 50rem) {
       .workspace { grid-template-columns: minmax(0, 1fr); }
       .game-picker { grid-row: 1; }
@@ -188,9 +232,22 @@
     <div class="workspace">
       <article class="box" aria-labelledby="game-title">
         <header class="box-head"><h2 id="game-title">Поле партии</h2><div class="tools"><span class="meta" id="game-meta"></span><button id="export" type="button" hidden>Скачать JSON</button><button id="delete-game" type="button" hidden>Удалить партию</button></div></header>
+        <div id="game-analysis" class="box-body game-analysis" hidden>
+          <h3 id="game-outcome"></h3>
+          <div id="analysis-bar"></div>
+          <dl id="analysis-values"></dl>
+        </div>
+        <div id="board-tools" class="box-body board-tools" hidden>
+          <button id="zoom-out" type="button" aria-label="Уменьшить масштаб">−</button>
+          <button id="zoom-in" type="button" aria-label="Увеличить масштаб">+</button>
+          <button id="zoom-reset" type="button">Сбросить масштаб</button>
+          <label class="caption"><input id="board-trail" type="checkbox"> След ходов</label>
+          <output id="board-coordinate" class="meta">Координаты —</output>
+        </div>
         <div class="board-shell">
+          <div id="board-loading" class="skeleton" role="status" aria-label="Загрузка партии" hidden></div>
           <p id="empty-board" class="empty">Войдите в историю и выберите партию.</p>
-          <canvas id="board" role="img" aria-label="Последняя позиция на поле" hidden></canvas>
+          <canvas id="board" tabindex="0" role="img" aria-label="Последняя позиция на поле" hidden></canvas>
         </div>
         <div id="game-detail" hidden>
           <div class="box-body caption legend" aria-label="Обозначения поля">
@@ -203,8 +260,8 @@
             <output id="frame" for="replay" class="caption"></output>
           </div>
           <div class="box-head"><h3>Время хода</h3><span class="caption">мс по номерам ходов</span></div>
-          <div class="box-body"><canvas id="chart" role="img" aria-label="График времени обработки ходов"></canvas></div>
-          <div class="box-head"><h3>Ходы</h3></div>
+          <div class="box-body"><canvas id="chart" role="img" aria-label="График времени обработки ходов"></canvas><output id="chart-tip" class="caption chart-tip"></output></div>
+          <div class="box-head"><h3>Ходы</h3><label class="caption">Показать <select id="turn-filter"><option value="all">Все</option><option value="capture">Захваты</option><option value="fallback">Запасные</option></select></label></div>
           <div class="table-shell" tabindex="0" aria-label="Таблица ходов">
             <table><thead><tr><th scope="col">№</th><th scope="col">Цвет бота</th><th scope="col">Соперник</th><th scope="col">Ход бота</th><th scope="col">Время</th><th scope="col">Отметка</th></tr></thead><tbody id="records"></tbody></table>
           </div>
@@ -227,6 +284,17 @@
           <p id="game-message" class="notice" role="status" hidden></p>
           <p id="selection-message" class="notice" role="status" hidden></p>
           <p id="games-summary" class="caption" hidden></p>
+          <div id="archive-controls" class="archive-controls" hidden>
+            <label class="caption archive-scope">В архив<select id="archive-scope"><option value="all">Все</option><option value="filtered">Отфильтрованные</option><option value="selected">Выбранные</option></select></label>
+            <div class="archive-actions">
+              <button id="download-zip" class="primary" type="button">Скачать все (ZIP)</button>
+              <button id="select-games" type="button">Выбрать все</button>
+              <button id="clear-selection" type="button">Снять выбор</button>
+            </div>
+            <p id="archive-message" class="notice" role="status" hidden></p>
+            <label class="caption archive-scope">Сортировка<select id="game-sort"><option value="new">Новые</option><option value="old">Старые</option><option value="score">По счёту бота</option><option value="length">По длине</option></select></label>
+          </div>
+          <div id="games-loading" class="skeleton" role="status" aria-label="Загрузка списка партий" hidden></div>
           <ul id="games" class="tabs" aria-label="Недавние партии"></ul>
         </div>
       </aside>
@@ -243,7 +311,51 @@
       return (newestActive ?? candidates[0])?.id ?? null;
     }
   </script>
+  <script id="archive-selection">
+    function archiveIds(scope, all, filtered, selected) {
+      if (scope === 'all') return null;
+      return (scope === 'filtered' ? filtered : all.filter(game => selected.has(game.id))).map(game => game.id);
+    }
+
+    function archiveName(date) {
+      const part = value => String(value).padStart(2, '0');
+      return `games_${date.getFullYear()}-${part(date.getMonth() + 1)}-${part(date.getDate())}.zip`;
+    }
+  </script>
   <script id="board-replay">
+    function unpackCells(value) {
+      if (!value) return [];
+      const bytes = Uint8Array.from(atob(value), byte => byte.charCodeAt(0));
+      const view = new DataView(bytes.buffer);
+      return Array.from({ length: bytes.length / 4 }, (_, i) => view.getUint32(i * 4, true));
+    }
+
+    function exactReplay(snapshot, framesByMove, target) {
+      if (target.moveNo >= snapshot.moveNo) return null;
+      const { width } = snapshot.field;
+      const colors = ['red', 'blue'];
+      const sets = source => Object.fromEntries(colors.map(color =>
+        [color, new Set(source[color].map(([x, y]) => y * width + x))]));
+      const points = sets(snapshot.points);
+      const dead = sets(snapshot.dead);
+      let current = snapshot;
+      while (current.moveNo > target.moveNo) {
+        const delta = current.deadDelta;
+        if (!delta || delta.fromMoveNo >= current.moveNo || delta.fromMoveNo < target.moveNo) return null;
+        for (const color of colors) {
+          for (const cell of unpackCells(delta[color].placed)) points[color].delete(cell);
+          for (const cell of unpackCells(delta[color].removed)) points[color].add(cell);
+          for (const cell of unpackCells(delta[color].addedDead)) dead[color].delete(cell);
+          for (const cell of unpackCells(delta[color].removedDead)) dead[color].add(cell);
+        }
+        current = framesByMove.get(delta.fromMoveNo);
+        if (!current) return null;
+      }
+      const unpack = cells => Object.fromEntries(colors.map(color => [color,
+        Array.from(cells[color], cell => [cell % width, Math.floor(cell / width)])]));
+      return { ...target, points: unpack(points), dead: unpack(dead), exact: true };
+    }
+
     function replayPlacements(snapshot, frames) {
       const known = new Map();
       const key = point => point.join(',');
@@ -306,6 +418,18 @@
     const score = (value) => `${value.red ?? '—'} : ${value.blue ?? '—'}`;
     const coord = (point) => point ? `${point[0]}, ${point[1]}` : '—';
     const moveCoord = (point) => point ? [point.x, point.y] : null;
+    const gameDetailPath = id => '/api/games/' + (id === 'export.zip' ? 'export%2Ezip' : encodeURIComponent(id));
+    const outcomeNames = { win: 'Победа', loss: 'Поражение', draw: 'Ничья', unfinished: 'Не завершена', unknown: 'Итог неизвестен' };
+    const eventNames = { capture: 'Захват', loss: 'Потеря', fallback: 'Запасной' };
+    const markedGames = new Set();
+    let archiveRequest;
+    let framesByMove = new Map();
+    let shownPosition;
+    let chartPoints = [];
+    let boardGrid;
+    let zoom = 1;
+    let pan = { x: 0, y: 0 };
+    let drag;
     let token = '';
     let authenticated = false;
     let passwordSession = false;
@@ -407,16 +531,30 @@
       const mean = (color) => timings.format(scored.reduce((sum, item) => sum + item.score[color], 0) / scored.length);
       const count = `Партий в истории: ${numbers.format(games.length)}.`;
       byId('games-summary').textContent = scored.length ? `${count} Средний счёт: ${mean('red')} : ${mean('blue')}.` : count;
-      const activeId = list.contains(document.activeElement) ? document.activeElement.dataset.id : undefined;
+      const focused = list.contains(document.activeElement) ? document.activeElement.dataset : {};
+      const activeId = focused.id;
+      const activeExport = focused.exportId;
       const items = filteredGames();
+      for (const id of markedGames) if (!games.some(item => item.id === id)) markedGames.delete(id);
+      const sort = byId('game-sort').value;
+      const ownScore = item => (item.finalScore ?? item.score)[item.you] ?? -1;
+      if (sort === 'old') items.sort((a, b) => a.startedAt - b.startedAt);
+      if (sort === 'score') items.sort((a, b) => ownScore(b) - ownScore(a));
+      if (sort === 'length') items.sort((a, b) => (b.botMoveCount ?? b.moveCount) - (a.botMoveCount ?? a.moveCount));
       const now = Date.now();
       const newFlags = items.map((item) => now - item.startedAt < 30_000);
-      const signature = JSON.stringify([items, selected, newFlags]);
+      const signature = JSON.stringify([items, selected, newFlags, [...markedGames]]);
       if (list.dataset.signature === signature) return;
       list.dataset.signature = signature;
       const fragment = document.createDocumentFragment();
       for (const [index, item] of items.entries()) {
         const row = document.createElement('li');
+        row.className = 'games-entry';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = markedGames.has(item.id);
+        checkbox.dataset.exportId = item.id;
+        checkbox.setAttribute('aria-label', `Включить в ZIP: ${item.title ?? item.id}`);
         const button = document.createElement('button');
         const title = document.createElement('span');
         const details = document.createElement('span');
@@ -429,7 +567,7 @@
         title.className = 'game-title';
         title.textContent = item.title ?? item.id;
         details.className = 'caption game-details';
-        details.textContent = `${item.field.width} × ${item.field.height} · ${item.moveCount} ход. · ${score(item.score)} · ${date(item.lastMoveAt)}`;
+        details.textContent = `${item.field.width} × ${item.field.height} · ${item.moveCount} зап. · ${score(item.score)} · ${date(item.lastMoveAt)}`;
         badge.className = 'mode';
         badge.dataset.mode = item.mode;
         badge.textContent = modeNames[item.mode];
@@ -448,12 +586,22 @@
           state.textContent = label;
           badges.append(state);
         }
-        button.append(title, details, badges);
-        row.append(button);
+        if (item.outcome) {
+          const outcome = document.createElement('span');
+          outcome.className = 'mode';
+          outcome.dataset.outcome = item.outcome;
+          outcome.textContent = outcomeNames[item.outcome];
+          badges.append(outcome);
+        }
+        const observed = item.botMoveCount;
+        if (observed !== undefined) details.textContent += ` · ходов бота ${observed}`;
+        button.append(title, details, badges, scoreBar(item.finalScore ?? item.score));
+        row.append(checkbox, button);
         fragment.append(row);
       }
       list.replaceChildren(fragment);
-      if (activeId !== undefined) Array.from(list.querySelectorAll('button')).find((button) => button.dataset.id === activeId)?.focus({ preventScroll: true });
+      if (activeId !== undefined) Array.from(list.querySelectorAll('button')).find(button => button.dataset.id === activeId)?.focus({ preventScroll: true });
+      if (activeExport !== undefined) Array.from(list.querySelectorAll('input')).find(input => input.dataset.exportId === activeExport)?.focus({ preventScroll: true });
     }
 
     function setAuthenticated(value) {
@@ -463,6 +611,7 @@
       byId('filters').hidden = !value;
       byId('follow-label').hidden = !value;
       byId('games-summary').hidden = !value;
+      byId('archive-controls').hidden = !value;
       byId('recent').hidden = !value;
     }
 
@@ -504,10 +653,17 @@
       gamesRequest?.abort();
       gamesRequest = null;
       token = '';
+      archiveRequest?.abort();
+      notice('archive-message', '');
+      markedGames.clear();
+      byId('archive-scope').value = 'all';
+      byId('game-sort').value = 'new';
       selected = null;
       games = [];
       game = null;
       setAuthenticated(false);
+      byId('games-loading').hidden = true;
+      byId('board-loading').hidden = true;
       byId('follow-latest').checked = true;
       notice('selection-message', '');
       byId('mode-filter').value = '';
@@ -532,6 +688,7 @@
       gamesRequest = controller;
       const options = { signal: controller.signal, headers: authHeaders() };
       let recentRequest;
+      if (!games.length && token) byId('games-loading').hidden = false;
       try {
         const data = await fetchJson('/api/games', options);
         if (controller.signal.aborted) return;
@@ -544,8 +701,12 @@
         renderGames();
         notice('game-message', items.length ? '' : (games.length ? 'Нет партий с такими фильтрами.' : 'Партии появятся после первого запроса хода.'));
         const summary = games.find((item) => item.id === selected);
-        if (summary && (force || game?.id !== selected || game.revision !== summary.revision || game.lastMoveAt !== summary.lastMoveAt)) {
-          const nextGame = await fetchJson(`/api/games/${encodeURIComponent(selected)}`, options);
+        if (summary && (force || game?.id !== selected || game.revision !== summary.revision || game.lastMoveAt !== summary.lastMoveAt || game.endedAt !== summary.endedAt)) {
+          if (!game) {
+            byId('board-loading').hidden = false;
+            byId('empty-board').hidden = true;
+          }
+          const nextGame = await fetchJson(gameDetailPath(selected), options);
           if (controller.signal.aborted) return;
           game = nextGame;
           renderGame();
@@ -564,8 +725,94 @@
         notice('game-message', error.status === 404 ? 'Эта партия уже недоступна. Список обновится.' : 'История сейчас недоступна. Попробуйте обновить панель.');
       } finally {
         await recentRequest;
-        if (gamesRequest === controller) gamesRequest = null;
+        if (gamesRequest === controller) {
+          gamesRequest = null;
+          byId('games-loading').hidden = true;
+          byId('board-loading').hidden = true;
+          if (!game) byId('empty-board').hidden = false;
+        }
       }
+    }
+
+    function scoreBar(value) {
+      const bar = document.createElement('span');
+      bar.className = 'score-bar';
+      bar.setAttribute('aria-hidden', 'true');
+      const total = (value?.red ?? 0) + (value?.blue ?? 0);
+      for (const color of ['red', 'blue']) {
+        const segment = document.createElement('i');
+        segment.style.width = total ? `${100 * (value[color] ?? 0) / total}%` : '0';
+        bar.append(segment);
+      }
+      return bar;
+    }
+
+    function renderAnalysis() {
+      byId('game-analysis').hidden = !game;
+      byId('board-tools').hidden = !game;
+      if (!game) return;
+      const value = game.finalScore ?? game.score;
+      byId('game-outcome').textContent = `${outcomeNames[game.outcome] ?? 'Сводка партии'} · ${score(value)}`;
+      byId('analysis-bar').replaceChildren(scoreBar(value));
+      const latency = game.latency ?? {};
+      const time = value => Number.isFinite(value) ? ms(value) : '—';
+      const values = [
+        ['Длительность', Number.isFinite(game.durationMs) ? uptime(game.durationMs / 1000) : '—'],
+        ['Среднее время', time(latency.averageMs)], ['Медиана', time(latency.medianMs)],
+        ['p95', time(latency.p95Ms)], ['Максимум', time(latency.maxMs)],
+        ['Запасные ходы', game.fallbackCount ?? '—'],
+        ['Ходы бота / соперника', `${game.botMoveCount ?? '—'} / ${game.opponentMoveCount ?? '—'}`],
+        ['Ошибки', game.errorCount ?? '—'],
+      ];
+      const list = byId('analysis-values');
+      list.replaceChildren();
+      for (const [label, value] of values) {
+        const item = document.createElement('div');
+        const title = document.createElement('dt');
+        const detail = document.createElement('dd');
+        title.textContent = label;
+        detail.textContent = value;
+        item.append(title, detail);
+        list.append(item);
+      }
+    }
+
+    function renderTurns() {
+      const filter = byId('turn-filter').value;
+      const rows = document.createDocumentFragment();
+      for (const record of game?.moves ?? []) {
+        if (filter === 'capture' && !record.events?.includes('capture')) continue;
+        if (filter === 'fallback' && !record.fallback) continue;
+        const row = document.createElement('tr');
+        row.dataset.moveNo = record.moveNo;
+        const number = document.createElement('td');
+        const jump = document.createElement('button');
+        jump.type = 'button';
+        jump.className = 'jump-turn';
+        jump.textContent = record.moveNo;
+        jump.setAttribute('aria-label', `Перейти к ходу №${record.moveNo}`);
+        number.append(jump);
+        row.append(number);
+        const mark = record.status === 200
+          ? (record.events?.map(event => eventNames[event]).join(' · ') || (record.fallback ? 'Запасной' : '—'))
+          : `Ошибка ${record.status}`;
+        for (const value of [colors[record.you], coord(record.last), coord(moveCoord(record.move)), ms(record.durationMs), mark]) {
+          const cell = document.createElement('td');
+          cell.textContent = value;
+          row.append(cell);
+        }
+        row.cells[1].className = record.you;
+        rows.append(row);
+      }
+      if (!rows.childNodes.length && game && filter !== 'all') {
+        const row = document.createElement('tr');
+        const note = document.createElement('td');
+        note.colSpan = 6;
+        note.textContent = 'Нет ходов с этой отметкой.';
+        row.append(note);
+        rows.append(row);
+      }
+      byId('records').replaceChildren(rows);
     }
 
     function renderGame() {
@@ -573,26 +820,22 @@
       byId('game-title').textContent = game?.title ?? game?.id ?? 'Поле партии';
       byId('game-meta').textContent = snapshot ? `${snapshot.field.width} × ${snapshot.field.height} · ${score(snapshot.score)}` : '';
       byId('empty-board').hidden = Boolean(snapshot);
+      byId('board-loading').hidden = true;
       byId('empty-board').textContent = authenticated ? 'Здесь появится поле партии.' : 'Войдите в историю и выберите партию.';
       byId('board').hidden = !snapshot;
       byId('game-detail').hidden = !snapshot;
       byId('export').hidden = !snapshot;
       byId('delete-game').hidden = !snapshot;
-      const rows = document.createDocumentFragment();
-      for (const record of game?.moves ?? []) {
-        const tr = document.createElement('tr');
-        const mark = record.status === 200 ? (record.fallback ? 'Запасной' : '—') : `Ошибка ${record.status}`;
-        for (const value of [record.moveNo, colors[record.you], coord(record.last), coord(moveCoord(record.move)), ms(record.durationMs), mark]) {
-          const td = document.createElement('td');
-          td.textContent = value;
-          tr.append(td);
-        }
-        tr.cells[1].className = record.you;
-        rows.append(tr);
+      renderAnalysis();
+      renderTurns();
+      const byMove = new Map();
+      for (const entry of game?.moves ?? []) {
+        const existing = byMove.get(entry.moveNo);
+        if (!existing || (!existing.deadDelta && entry.deadDelta)) byMove.set(entry.moveNo, entry);
       }
-      byId('records').replaceChildren(rows);
-      const byMove = new Map((game?.moves ?? []).map((entry) => [entry.moveNo, entry]));
       if (snapshot) byMove.set(snapshot.moveNo, snapshot);
+      framesByMove = byMove;
+      shownPosition = null;
       frames = Array.from(byMove.values()).filter((entry) => entry.moveNo <= snapshot.moveNo)
         .sort((a, b) => a.moveNo - b.moveNo);
       placements = snapshot ? replayPlacements(snapshot, frames) : null;
@@ -613,6 +856,11 @@
     function resetReplay() {
       stopReplay();
       frameMoveNo = null;
+      zoom = 1;
+      pan = { x: 0, y: 0 };
+      byId('board').removeAttribute('data-zoomed');
+      byId('board-coordinate').textContent = 'Координаты —';
+      byId('turn-filter').value = 'all';
     }
 
     function renderFrame() {
@@ -624,9 +872,12 @@
         frameMoveNo = null;
       }
       const frame = frames[index];
-      const caption = frame.afterResponse ? 'после ответа бота, расчёт' :
-        frame === snapshot ? 'снимок до ответа бота' : 'приближённо, без данных о мёртвых точках';
       byId('replay').value = index;
+      shownPosition = boardPosition();
+      const caption = frame.afterResponse ? 'после ответа бота, расчёт' :
+        frame === snapshot ? 'снимок до ответа бота' :
+        shownPosition.exact ? 'восстановлено из снимка и дельт' : 'приближённо, без данных о мёртвых точках';
+
       byId('frame').textContent = `Ход №${frame.moveNo} · ${caption}`;
       byId('board').setAttribute('aria-label', byId('frame').textContent);
       const side = colors[frame.you] ? ` · Бот: ${colors[frame.you].toLowerCase()}` : '';
@@ -643,6 +894,8 @@
       const snapshot = game.snapshot;
       const frame = frames[Number(byId('replay').value)];
       if (frame === snapshot || frame.afterResponse) return frame;
+      const exact = exactReplay(snapshot, framesByMove, frame);
+      if (exact) return exact;
       const points = Object.fromEntries(['red', 'blue'].map(color => [
         color, placements[color].filter(entry => entry.presentBy < frame.moveNo).map(entry => entry.point),
       ]));
@@ -663,14 +916,16 @@
     }
 
     function drawBoard(snapshot, paint) {
+      boardGrid = null;
       const surface = canvasContext('board');
       if (!surface) return;
       const { ctx, width, height } = surface;
       const { width: cols, height: rows } = snapshot.field;
-      const step = Math.min((width - 36) / Math.max(1, cols - 1), (height - 36) / Math.max(1, rows - 1), 45);
+      const step = zoom * Math.min((width - 36) / Math.max(1, cols - 1), (height - 36) / Math.max(1, rows - 1), 45);
       if (step <= 0) return;
-      const left = (width - (cols - 1) * step) / 2;
-      const top = (height - (rows - 1) * step) / 2;
+      const left = (width - (cols - 1) * step) / 2 + pan.x;
+      const top = (height - (rows - 1) * step) / 2 + pan.y;
+      boardGrid = { step, left, top, cols, rows };
       const x = (column) => left + column * step;
       const y = (row) => top + row * step;
       const radius = Math.max(.6, Math.min(step * .37, 7));
@@ -681,6 +936,30 @@
       for (let col = 0; col < cols; col += stride) { ctx.moveTo(x(col), top); ctx.lineTo(x(col), y(rows - 1)); }
       for (let row = 0; row < rows; row += stride) { ctx.moveTo(left, y(row)); ctx.lineTo(x(cols - 1), y(row)); }
       ctx.stroke();
+      if (snapshot.captured) {
+        ctx.save();
+        ctx.fillStyle = paint('--amber');
+        ctx.globalAlpha = .28;
+        for (const cell of unpackCells(snapshot.captured)) {
+          ctx.fillRect(x(cell % cols) - step / 2, y(Math.floor(cell / cols)) - step / 2, step, step);
+        }
+        ctx.restore();
+      }
+      if (byId('board-trail').checked) {
+        const index = Number(byId('replay').value);
+        const trail = frames.slice(Math.max(0, index - 5), index);
+        ctx.save();
+        ctx.strokeStyle = paint('--muted');
+        ctx.lineWidth = 1.4;
+        trail.forEach((frame, i) => {
+          if (!frame.move) return;
+          ctx.globalAlpha = .14 + i * .10;
+          ctx.beginPath();
+          ctx.arc(x(frame.move.x), y(frame.move.y), radius + 1.5, 0, Math.PI * 2);
+          ctx.stroke();
+        });
+        ctx.restore();
+      }
       if (byId('board-links').checked) {
         ctx.save();
         ctx.globalAlpha = .64;
@@ -740,6 +1019,7 @@
     }
 
     function drawChart(records, paint) {
+      chartPoints = [];
       const surface = canvasContext('chart');
       if (!surface || !records.length) return;
       const { ctx, width, height } = surface;
@@ -767,6 +1047,18 @@
       for (const n of new Set(Array.from({ length: ticks + 1 }, (_, i) => minMove + Math.round(i / ticks * (maxMove - minMove))))) {
         ctx.fillText(`#${n}`, x(n), height - 7);
       }
+      const p95 = game.latency?.p95Ms;
+      if (Number.isFinite(p95)) {
+        ctx.save();
+        ctx.strokeStyle = paint('--amber');
+        ctx.fillStyle = paint('--amber');
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(left, y(p95)); ctx.lineTo(right, y(p95)); ctx.stroke();
+        ctx.textAlign = 'right';
+        ctx.fillText('p95', right - 2, Math.max(top + 9, y(p95) - 4));
+        ctx.restore();
+      }
       ctx.strokeStyle = paint('--accent');
       ctx.lineWidth = 1.7;
       ctx.beginPath();
@@ -775,17 +1067,100 @@
       });
       ctx.stroke();
       for (const move of sorted) {
-        ctx.fillStyle = paint(move.fallback ? '--amber' : '--accent');
-        ctx.beginPath(); ctx.arc(x(move.moveNo), y(move.durationMs), 2.3, 0, Math.PI * 2); ctx.fill();
+        const px = x(move.moveNo);
+        const py = y(move.durationMs);
+        const capture = move.events?.includes('capture');
+        ctx.fillStyle = paint(capture ? '--green' : move.fallback ? '--amber' : '--accent');
+        ctx.beginPath(); ctx.arc(px, py, capture || move.fallback ? 4 : 2.3, 0, Math.PI * 2); ctx.fill();
+        chartPoints.push({ x: px, y: py, move });
       }
     }
 
     function drawCanvases() {
-      if (!game) return;
-      const style = getComputedStyle(root);
-      const paint = (name) => style.getPropertyValue(name).trim();
-      drawBoard(boardPosition(), paint);
+      if (!game || !shownPosition) return;
+      const paint = canvasPalette();
+      drawBoard(shownPosition, paint);
       drawChart(game.moves, paint);
+    }
+
+    function canvasPalette() {
+      const style = getComputedStyle(root);
+      return name => style.getPropertyValue(name).trim();
+    }
+
+    function redrawBoard() {
+      if (shownPosition) drawBoard(shownPosition, canvasPalette());
+    }
+
+    function changeZoom(value) {
+      zoom = Math.max(1, Math.min(4, value));
+      if (zoom === 1) pan = { x: 0, y: 0 };
+      byId('board').toggleAttribute('data-zoomed', zoom > 1);
+      redrawBoard();
+    }
+
+    function seekMove(moveNo) {
+      const index = frames.findIndex(frame => frame.moveNo === moveNo);
+      if (index < 0) return;
+      stopReplay();
+      showFrame(index);
+    }
+
+    function nearbyChartPoint(event) {
+      let nearest;
+      let best = 20;
+      for (const point of chartPoints) {
+        const distance = Math.hypot(point.x - event.offsetX, point.y - event.offsetY);
+        if (distance < best) { nearest = point; best = distance; }
+      }
+      return nearest?.move;
+    }
+
+    async function downloadArchive() {
+      if (archiveRequest) return;
+      const ids = archiveIds(byId('archive-scope').value, games, filteredGames(), markedGames);
+      if (!games.length || (ids && !ids.length)) {
+        notice('archive-message', ids ? 'Нет партий для выбранного режима выгрузки.' : 'В истории нет партий.');
+        return;
+      }
+      const query = new URLSearchParams();
+      ids?.forEach(id => query.append('ids', id));
+      const controller = new AbortController();
+      archiveRequest = controller;
+      const button = byId('download-zip');
+      button.disabled = true;
+      notice('archive-message', 'Готовлю архив…');
+      try {
+        const response = await fetch('/api/games/export.zip' + (query.size ? '?' + query : ''), {
+          headers: authHeaders(), cache: 'no-store',
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]),
+        });
+        if (!response.ok) {
+          const messages = {
+            401: 'Войдите снова, чтобы скачать архив.',
+            403: 'Задайте DASHBOARD_TOKEN на сервере, чтобы включить выгрузку.',
+            404: 'Выбранные партии уже недоступны для выгрузки.',
+            413: 'Архив больше 100 МБ. Выберите меньше партий.',
+            429: 'Другая выгрузка ещё выполняется. Попробуйте снова.',
+          };
+          notice('archive-message', messages[response.status] ?? 'Сервер не смог подготовить архив.');
+          return;
+        }
+        const blob = await response.blob();
+        if (controller.signal.aborted) return;
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = archiveName(new Date());
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        notice('archive-message', '');
+      } catch {
+        if (!controller.signal.aborted) notice('archive-message', 'Не удалось скачать архив. Проверьте соединение и попробуйте снова.');
+      } finally {
+        button.disabled = false;
+        archiveRequest = null;
+      }
     }
 
     function refresh(force = false) {
@@ -876,6 +1251,74 @@
     }
     byId('filters').addEventListener('change', updateGameFilter);
     byId('game-search').addEventListener('input', updateGameFilter);
+    byId('download-zip').addEventListener('click', downloadArchive);
+    byId('select-games').addEventListener('click', () => {
+      filteredGames().forEach(item => markedGames.add(item.id));
+      renderGames();
+    });
+    byId('clear-selection').addEventListener('click', () => {
+      markedGames.clear();
+      renderGames();
+    });
+    byId('games').addEventListener('change', event => {
+      const id = event.target.dataset.exportId;
+      if (!id) return;
+      if (event.target.checked) markedGames.add(id);
+      else markedGames.delete(id);
+    });
+    byId('game-sort').addEventListener('change', renderGames);
+    byId('turn-filter').addEventListener('change', renderTurns);
+    byId('records').addEventListener('click', event => {
+      const row = event.target.closest('tr[data-move-no]');
+      if (row) seekMove(Number(row.dataset.moveNo));
+    });
+    byId('chart').addEventListener('pointermove', event => {
+      const move = nearbyChartPoint(event);
+      byId('chart-tip').textContent = move ? `Ход №${move.moveNo} · ${ms(move.durationMs)}${move.events?.length
+        ? ' · ' + move.events.map(name => eventNames[name]).join(', ') : ''}` : '';
+    });
+    byId('chart').addEventListener('pointerleave', () => { byId('chart-tip').textContent = ''; });
+    byId('chart').addEventListener('click', event => {
+      const move = nearbyChartPoint(event);
+      if (move) seekMove(move.moveNo);
+    });
+    byId('zoom-in').addEventListener('click', () => changeZoom(zoom * 1.35));
+    byId('zoom-out').addEventListener('click', () => changeZoom(zoom / 1.35));
+    byId('zoom-reset').addEventListener('click', () => changeZoom(1));
+    byId('board-trail').addEventListener('change', redrawBoard);
+    byId('board').addEventListener('pointerdown', event => {
+      if (zoom === 1 || event.button !== 0) return;
+      drag = { id: event.pointerId, x: event.clientX - pan.x, y: event.clientY - pan.y };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    });
+    byId('board').addEventListener('pointermove', event => {
+      if (!boardGrid) return;
+      if (drag?.id === event.pointerId) {
+        const clamp = (value, limit) => Math.max(-limit, Math.min(limit, value));
+        pan = {
+          x: clamp(event.clientX - drag.x, event.currentTarget.clientWidth * (zoom - 1) / 2),
+          y: clamp(event.clientY - drag.y, event.currentTarget.clientHeight * (zoom - 1) / 2),
+        };
+        redrawBoard();
+      }
+      const { left, top, step, cols, rows } = boardGrid;
+      const x = Math.round((event.offsetX - left) / step);
+      const y = Math.round((event.offsetY - top) / step);
+      byId('board-coordinate').textContent = x >= 0 && x < cols && y >= 0 && y < rows ? `Координаты ${x}, ${y}` : 'Координаты —';
+    });
+    byId('board').addEventListener('lostpointercapture', () => { drag = undefined; });
+    byId('board').addEventListener('pointerleave', () => { byId('board-coordinate').textContent = 'Координаты —'; });
+    byId('board').addEventListener('keydown', event => {
+      if (!frames.length || !['ArrowLeft', 'ArrowRight', ' '].includes(event.key)) return;
+      event.preventDefault();
+      if (event.key === ' ') {
+        byId('play').click();
+        return;
+      }
+      stopReplay();
+      const index = Number(byId('replay').value) + (event.key === 'ArrowLeft' ? -1 : 1);
+      showFrame(Math.max(0, Math.min(frames.length - 1, index)));
+    });
     byId('board-links').addEventListener('change', drawCanvases);
     byId('replay').addEventListener('input', (event) => {
       stopReplay();
@@ -899,6 +1342,16 @@
       } catch {
         notice('copy-message', `Адрес бота: ${location.origin}`);
       }
+    });
+    const arenaMenu = byId('arena-menu');
+    document.addEventListener('click', (event) => {
+      if (arenaMenu.open && !arenaMenu.contains(event.target)) arenaMenu.open = false;
+    });
+    arenaMenu.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || !arenaMenu.open) return;
+      event.preventDefault();
+      arenaMenu.open = false;
+      arenaMenu.querySelector('summary').focus();
     });
     const restartDialog = byId('restart-dialog');
     const restartForm = byId('restart-form');
@@ -995,7 +1448,7 @@
       const button = byId('delete-game');
       button.disabled = true;
       try {
-        await fetchJson(`/api/games/${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
+        await fetchJson(gameDetailPath(id), { method: 'DELETE', headers: authHeaders() });
         await refreshGames(true);
         notice('selection-message', 'Партия удалена.');
       } catch {
