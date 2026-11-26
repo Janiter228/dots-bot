@@ -480,7 +480,11 @@ function rankMoves(board, width, height, playerCode, enemyCode, limit, deadline,
     const connection = analysis?.own.cuts.get(index);
     const cut = analysis?.enemy.cuts.get(index);
     const frontierBonus = (connection?.contested ? 12 : 0) + (cut?.contested ? 8 : 0);
-    const score = simulation.captured * WEIGHTS.orderingCapture + frontierBonus
+    // Surface quiet preparations for a large enclosure among the opponent replies.
+    const setup = playerCode === ENEMY_LIVE && board.length >= 100 && board.length <= 400
+      ? projectedPressure(simulation.board, width, height, playerCode, enemyCode)
+      : 0;
+    const score = simulation.captured * WEIGHTS.orderingCapture + frontierBonus + setup
       + position + (advice?.(board, index, width, height) ?? 0)
       - (simulation.selfCaptured ? WEIGHTS.selfCapturePenalty : 0);
 
@@ -620,11 +624,14 @@ function tacticalLeaf(board, width, height, deadline, staticScore, redCode) {
     if (performance.now() >= deadline) return null;
     const next = applyMove(board, index, width, height, OUR_LIVE, ENEMY_LIVE, enemy, redCode).board;
     const ownTerritory = enclosed(next, width, height, OUR_LIVE);
-    const counter = captureMoves(next, width, height, ENEMY_LIVE, OUR_LIVE, ownTerritory, redCode)[0];
-    const leaf = counter
-      ? applyMove(next, counter.index, width, height, ENEMY_LIVE, OUR_LIVE, ownTerritory, redCode).board
-      : next;
-    best = Math.max(best, evaluatePosition(leaf, width, height));
+    const counters = captureMoves(next, width, height, ENEMY_LIVE, OUR_LIVE, ownTerritory, redCode);
+    let floor = evaluatePosition(next, width, height);
+    for (const { index: counter } of counters.slice(0, 3)) {
+      if (performance.now() >= deadline) return null;
+      const { board: leaf } = applyMove(next, counter, width, height, ENEMY_LIVE, OUR_LIVE, ownTerritory, redCode);
+      floor = Math.min(floor, evaluatePosition(leaf, width, height));
+    }
+    best = Math.max(best, floor);
   }
   return performance.now() >= deadline ? null : best;
 }
