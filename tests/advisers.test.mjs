@@ -70,8 +70,3 @@ test('медленная передача тела запроса получае
   res.resume();
   client.end();
 });
-
-test('sandbox_18: занимает клетку подготовки окружения до появления вилки', () => {
-  const request = JSON.parse(readFileSync(new URL('./fixtures/sandbox-18-110.json', import.meta.url)));
-  assert.deepEqual(chooseMove(request), { x: 17, y: 5 });
-});

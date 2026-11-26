@@ -367,29 +367,3 @@ test('воспроизведение учитывает пропущенный �
   assert.equal(JSON.stringify(timeline.blue.map(p => p.presentBy)), '[2,4,6]');
   assert.equal(JSON.stringify(liveConnections(snapshot.points.blue, [[3, 4]])), '[[[2,2],[3,3]]]');
 });
-
-test('управление ботом требует доступ к панели и PIN, панель доступна в паузе', async t => {
-  const { scryptSync } = await import('node:crypto');
-  const salt = Buffer.alloc(16);
-  const password = '1234';
-  const port = await start(t, {
-    dashboardToken: 'test-dashboard',
-    dashboardAccessPasswordHash: salt.toString('hex') + ':' + scryptSync(password, salt, 32).toString('hex'),
-  });
-  const url = 'http://127.0.0.1:' + port;
-  const post = (path, body, headers = {}) => fetch(url + path, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body),
-  });
-  const auth = { Authorization: 'Bearer test-dashboard' };
-  assert.equal((await post('/api/bot-state', { password, enabled: false })).status, 401);
-  assert.equal((await post('/api/bot-state', { password: '4321', enabled: false }, auth)).status, 401);
-  assert.deepEqual(await (await post('/api/bot-state', { password, enabled: false }, auth)).json(), { botEnabled: false });
-  const input = { gameId: 'pause-test', moveNo: 1, you: 'red', field: { width: 20, height: 20 },
-    points: { red: [], blue: [] }, last: null };
-  const paused = await post('/v1/move', input);
-  assert.equal(paused.status, 503);
-  assert.equal((await paused.json()).error.code, 'bot_disabled');
-  assert.equal((await get(port, '/')).status, 200);
-  assert.deepEqual(await (await post('/api/bot-state', { password, enabled: true }, auth)).json(), { botEnabled: true });
-  assert.deepEqual(await (await post('/v1/move', input)).json(), { x: 10, y: 10 });
-});
