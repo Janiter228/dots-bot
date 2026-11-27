@@ -94,6 +94,15 @@ function countLive(board, code) {
   return count;
 }
 
+function materialScore(board) {
+  let score = 0;
+  for (const cell of board) {
+    if (cell === ENEMY_DEAD) score++;
+    else if (cell === OUR_DEAD) score--;
+  }
+  return score;
+}
+
 function buildBoard(request) {
   const { width, height } = request.field;
   const board = new Uint8Array(width * height);
@@ -609,6 +618,54 @@ function threats(board, width, height, redCode) {
   };
 }
 
+// Достаточно одного ответа соперника, удерживающего потолок размена.
+function keepsTradeAtFloor(board, width, height, redCode, floor, deadline) {
+  const enemyZone = enclosed(board, width, height, ENEMY_LIVE);
+  for (let index = 0; index < board.length; index++) {
+    if (board[index] !== EMPTY) continue;
+    if (performance.now() >= deadline) return false;
+    const after = applyMove(board, index, width, height, OUR_LIVE, ENEMY_LIVE, enemyZone, redCode).board;
+    if (materialScore(after) > floor) return false;
+    if (!after.includes(EMPTY)) continue;
+    const ownZone = enclosed(after, width, height, OUR_LIVE);
+    const reply = after.findIndex((cell, at) => cell === EMPTY && !ownZone[at]);
+    if (reply < 0) return false;
+    const leaf = applyMove(after, reply, width, height, ENEMY_LIVE, OUR_LIVE, ownZone, redCode).board;
+    if (materialScore(leaf) > floor) return false;
+  }
+  return performance.now() < deadline;
+}
+
+// Проверяем блок перед разменом: после любого ответа должен остаться
+// захват, чей результат выдерживает ещё один ответ соперника.
+function provesBetterDelayedCapture(board, width, height, redCode, floor, deadline) {
+  const enemyZone = enclosed(board, width, height, ENEMY_LIVE);
+  const closures = captureMoves(board, width, height, OUR_LIVE, ENEMY_LIVE, enemyZone, redCode).slice(0, 4);
+  if (closures.length < 2) return false;
+
+  const ownZone = enclosed(board, width, height, OUR_LIVE);
+  for (let index = 0; index < board.length; index++) {
+    if (board[index] !== EMPTY) continue;
+    if (performance.now() >= deadline) return false;
+    const reply = applyMove(board, index, width, height, ENEMY_LIVE, OUR_LIVE, ownZone, redCode).board;
+    const replyZone = enclosed(reply, width, height, ENEMY_LIVE);
+    const survives = closures.some(({ index: closure }) => {
+      if (reply[closure] !== EMPTY || performance.now() >= deadline) return false;
+      const after = applyMove(reply, closure, width, height, OUR_LIVE, ENEMY_LIVE, replyZone, redCode).board;
+      if (materialScore(after) <= floor) return false;
+      const territory = enclosed(after, width, height, OUR_LIVE);
+      const counters = captureMoves(after, width, height, ENEMY_LIVE, OUR_LIVE, territory, redCode);
+      return counters.every(({ index: counter }) => {
+        if (performance.now() >= deadline) return false;
+        const leaf = applyMove(after, counter, width, height, ENEMY_LIVE, OUR_LIVE, territory, redCode).board;
+        return materialScore(leaf) > floor;
+      });
+    });
+    if (!survives) return false;
+  }
+  return performance.now() < deadline;
+}
+
 // На третьем полуходе пробуем захваты и прямые блоки, на четвёртом —
 // сильнейший оставшийся захват соперника. Это выборочная, не полная глубина.
 function tacticalLeaf(board, width, height, deadline, staticScore, redCode) {
@@ -801,27 +858,49 @@ export function chooseMove(request, { advice, checkpoint } = {}) {
   // A long wall can capture an entire group at once. Test the actual swing
   // after the opponent's largest closures before spending time on quiet moves.
   if ((dangers[0]?.count ?? 0) >= 3 && blocks.length && performance.now() < deadline) {
-    const urgent = new Set([...blocks.slice(0, 4), ...attacks.slice(0, 4)].map(m => m.index));
+    const directBlocks = blocks.slice(0, 4).map(m => m.index);
+    const urgent = new Set([...directBlocks, ...attacks.slice(0, 4).map(m => m.index)]);
+    const safeBlocks = [];
     let best = -1;
     let bestFloor = -Infinity;
-    const initial = countLive(board, ENEMY_DEAD) - countLive(board, OUR_DEAD);
+    let bestCounter;
+    const initial = materialScore(board);
     for (const index of urgent) {
       if (performance.now() >= deadline) break;
       const next = applyMove(board, index, width, height, OUR_LIVE, ENEMY_LIVE, enemy, redCode).board;
       const ownZone = enclosed(next, width, height, OUR_LIVE);
       const replies = captureMoves(next, width, height, ENEMY_LIVE, OUR_LIVE, ownZone, redCode);
-      const material = position => countLive(position, ENEMY_DEAD) - countLive(position, OUR_DEAD);
-      let floor = material(next);
+      const immediate = materialScore(next);
+      let floor = immediate;
+      let worstReply;
       for (const reply of replies.slice(0, 3)) {
         const after = applyMove(next, reply.index, width, height, ENEMY_LIVE, OUR_LIVE, ownZone, redCode);
-        floor = Math.min(floor, material(after.board));
+        const material = materialScore(after.board);
+        if (material < floor) {
+          floor = material;
+          worstReply = after.board;
+        }
       }
+      if (directBlocks.includes(index) && replies.length === 0 && immediate >= initial) safeBlocks.push({ index, next });
       if (floor > bestFloor) {
         bestFloor = floor;
+        bestCounter = worstReply;
         best = index;
       }
     }
-    if (best >= 0 && bestFloor >= initial) return moveAt(best);
+    if (best >= 0 && bestFloor >= initial) {
+      if (board.length <= 400 && attacks.length >= 2 && bestCounter && safeBlocks.length) {
+        checkpoint?.(moveAt(best));
+        const proofDeadline = Math.min(deadline, performance.now() + Math.min(120, thinkBudget * 0.3));
+        if (keepsTradeAtFloor(bestCounter, width, height, redCode, bestFloor, proofDeadline)) {
+          for (const { index, next } of safeBlocks) {
+            if (performance.now() >= proofDeadline) break;
+            if (provesBetterDelayedCapture(next, width, height, redCode, bestFloor, proofDeadline)) return moveAt(index);
+          }
+        }
+      }
+      return moveAt(best);
+    }
   }
   const quickAttack = dangers.length === 0 && attacks.length === 1 ? attacks[0].index : undefined;
   const quickBlock = dangers.length === 1 && attacks.length === 0 ? blocks[0]?.index : undefined;
