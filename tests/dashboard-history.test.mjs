@@ -5,6 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 import { createDashboard } from '../server/dashboard.js';
 import { createBotServer } from '../server/index.js';
 
@@ -76,6 +77,59 @@ test('история переживает перезапуск, удаление
   assert.equal((await afterRestart('/v1/move', post(next))).status, 200);
   assert.deepEqual(await (await afterRestart('/api/games', { headers: auth })).json(), []);
   assert.deepEqual(await (await afterRestart('/api/recent-moves', { headers: auth })).json(), []);
+});
+
+test('кнопка удаления удаляет все отмеченные партии и сохраняет открытую без галочки', async t => {
+  const api = await start(t, createDashboard());
+  const markedIds = ['g/1', 'g/2'];
+  const openId = 'g/3';
+  for (const gameId of [...markedIds, openId]) {
+    assert.equal((await api('/v1/move', post({ ...input, gameId }))).status, 200);
+  }
+  const list = async () => (await api('/api/games', { headers: auth })).json();
+  const response = await api('/');
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  const button = {};
+  const callbacks = new Map();
+  const byId = id => id === 'delete-game' ? button : {
+    addEventListener(event, callback) { callbacks.set(`${id}:${event}`, callback); },
+  };
+  button.addEventListener = (event, callback) => callbacks.set(`delete-game:${event}`, callback);
+  const messages = [];
+  const questions = [];
+  const context = {
+    byId, AbortController, AbortSignal, fetch: api, token,
+    authenticated: true, game: { id: openId }, selected: openId,
+    games: await list(), markedGames: new Set(), deleteRequest: null,
+    confirm: question => { questions.push(question); return true; },
+    notice: (_id, message) => messages.push(message),
+    resetReplay() {}, renderGames() {}, renderGame() {}, async refreshGames() {},
+  };
+  const scripts = [
+    /    const gameDetailPath = .*;/,
+    /    async function fetchJson\([\s\S]+?\n    }/,
+    /    function authHeaders\([\s\S]+?\n    }/,
+    /    function renderDeleteButton\([\s\S]+?\n    }/,
+    /    byId\('games'\)\.addEventListener\('change',[\s\S]+?\n    \}\);/,
+    /    byId\('delete-game'\)\.addEventListener\('click',[\s\S]+?\n    \}\);/,
+  ].map(pattern => {
+    const match = html.match(pattern);
+    assert.ok(match, `Блок скрипта панели ${pattern}`);
+    return match[0];
+  });
+  runInNewContext(scripts.join('\n'), context);
+  for (const id of markedIds) callbacks.get('games:change')({ target: { checked: true, dataset: { exportId: id } } });
+  assert.equal(button.textContent, 'Удалить выбранные партии (2)');
+
+  await callbacks.get('delete-game:click')();
+
+  assert.match(questions[0], /Количество: 2/);
+  assert.deepEqual((await list()).map(game => game.id), [openId]);
+  assert.equal(context.markedGames.size, 0);
+  assert.equal(context.selected, openId);
+  assert.equal(button.disabled, false);
+  assert.match(messages.at(-1), /Удалено партий: 2 из 2/);
 });
 
 test('история удаляет партии через сутки', async t => {
