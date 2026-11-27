@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BOT_VERSION } from '../bot/index.js';
 import { infiniteFallback } from '../bot/field-profile.js';
+import { responseLimit } from '../bot/time-budget.js';
 import { computeMove } from './compute-move.js';
 import { createDashboard, serveDashboardFile } from './dashboard.js';
 import { DASHBOARD_SCHEMA_VERSION } from './dashboard-analysis.js';
@@ -13,7 +14,6 @@ import { pipeline } from 'node:stream/promises';
 import { createDashboardAccess } from './dashboard-access.js';
 import { createGameLogs } from './game-logs.js';
 
-const PORT = Number(process.env.PORT || 4003);
 const BODY_LIMIT_BYTES = 8 * 1024 * 1024;
 const MAX_CACHED_GAMES = 128;
 const MAX_CACHED_MOVES = 3000;
@@ -200,6 +200,8 @@ export function createBotServer({
   const instanceId = randomUUID();
   let restartPending = false;
   let exportPending = false;
+  let botEnabled = true;
+  let botStateRevision = 0;
 
   function gameMetadata(record) {
     const snapshot = record.snapshot;
@@ -320,12 +322,13 @@ export function createBotServer({
         return;
       }
       if (req.method === 'GET' && rawPath === '/api/status') {
-        sendJson(res, 200, { ...dashboard.status(BOT_VERSION), gameLogs: gameLogs.status(), instanceId });
+        sendJson(res, 200, { ...dashboard.status(BOT_VERSION), gameLogs: gameLogs.status(), instanceId, botEnabled });
         return;
       }
-      if (serveDashboard && req.method === 'POST' && rawPath === '/api/restart') {
+      if (serveDashboard && req.method === 'POST' && ['/api/restart', '/api/bot-state'].includes(rawPath)) {
+        const changeState = rawPath === '/api/bot-state';
         if (!requireDashboardAccess(req, res)) return;
-        if (!restart || !dashboardAccess.passwordConfigured) {
+        if ((!changeState && !restart) || !dashboardAccess.passwordConfigured) {
           sendError(res, 503, 'restart_unavailable', 'Перезапуск не настроен на сервере');
           return;
         }
@@ -344,6 +347,16 @@ export function createBotServer({
         if (status !== 200) {
           sendError(res, status, status === 429 ? 'too_many_attempts' : 'unauthorized',
             status === 429 ? 'Слишком много попыток' : 'Неверный пароль');
+          return;
+        }
+        if (changeState) {
+          if (typeof body.enabled !== 'boolean') {
+            sendError(res, 400, 'bad_request', 'Укажите логическое значение enabled');
+            return;
+          }
+          if (botEnabled !== body.enabled) botStateRevision++;
+          botEnabled = body.enabled;
+          sendJson(res, 200, { botEnabled });
           return;
         }
         res.once('finish', () => {
@@ -512,10 +525,24 @@ export function createBotServer({
         return;
       }
 
+      if (!botEnabled) {
+        sendError(res, 503, 'bot_disabled', 'Бот выключен');
+        return;
+      }
+      const moveRevision = botStateRevision;
+      const uploadTimer = setTimeout(() => {
+        if (res.destroyed || res.writableEnded) return;
+        res.setHeader('Connection', 'close');
+        sendError(res, 408, 'request_timeout', 'Истекло время получения позиции');
+      }, responseLimit());
+      uploadTimer.unref();
       let request;
       try {
         request = await readJson(req);
+        if (res.writableEnded) return;
       } catch (error) {
+        clearTimeout(uploadTimer);
+        if (res.writableEnded || res.destroyed) return;
         sendError(
           res,
           error.statusCode || 400,
@@ -525,6 +552,11 @@ export function createBotServer({
         return;
       }
 
+      clearTimeout(uploadTimer);
+      if (moveRevision !== botStateRevision) {
+        sendError(res, 503, 'bot_disabled', 'Приём ходов был приостановлен');
+        return;
+      }
       const validationError = validateMoveRequest(request);
       if (validationError) {
         sendError(res, 400, 'bad_request', validationError);
@@ -598,7 +630,7 @@ export function createBotServer({
       if (res.destroyed) cancel();
       let move;
       try {
-        move = await computeMove(request, cancellation.signal);
+        move = pointCount === 0 ? findAnyFreeMove(request) : await computeMove(request, cancellation.signal, startedAt);
         if (cancellation.signal.aborted) return;
         // Не позволяем ошибке алгоритма превратиться в пропуск хода.
         // Если стратегия вернула некорректную клетку, выбираем любую свободную.
@@ -612,14 +644,15 @@ export function createBotServer({
         console.error('Ошибка при выборе хода:', error);
         fallback = true;
         move = findAnyFreeMove(request);
-        if (!move) {
-          sendError(res, 500, 'bot_error', 'Не удалось выбрать ход');
-          return;
-        }
+
       } finally {
         res.off('close', cancel);
       }
       if (res.destroyed || cancellation.signal.aborted) return;
+      if (moveRevision !== botStateRevision) {
+        sendError(res, 503, 'bot_disabled', 'Приём ходов был приостановлен');
+        return;
+      }
       if (!move) {
         session.endedAt ??= Date.now();
         sendError(res, 409, 'no_free_moves', 'На поле не осталось свободных пересечений');
@@ -658,11 +691,16 @@ const isMainModule = process.argv[1] &&
   fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 
 if (isMainModule) {
-  try {
-    process.loadEnvFile(fileURLToPath(new URL('.env', import.meta.url)));
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
+  for (const file of ['../.env', '.env']) {
+    try {
+      process.loadEnvFile(fileURLToPath(new URL(file, import.meta.url)));
+      break;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
   }
+  const PORT = Number(process.env.PORT || 4003);
+  responseLimit();
   const historyFile = path.join(process.env.GAME_LOG_DIR || fileURLToPath(new URL('../data', import.meta.url)),
     'dashboard-history.json');
   const dashboard = createDashboard({ historyFile });
