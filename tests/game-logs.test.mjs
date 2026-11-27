@@ -85,7 +85,7 @@ test('HTTP-ход записывается после ответа без ток
   const text = await readFile(path.join(directory, (await readdir(directory))[0]), 'utf8');
   assert.ok(!text.includes('secret'));
   assert.deepEqual(JSON.parse(text).response, move);
-  const stats = await (await fetch(`${url}/api/status`)).json();
+  const stats = await (await fetch(`${url}/api/status`, { headers: { Authorization: 'Bearer dashboard-secret' } })).json();
   assert.equal(stats.gameLogs.written, 1);
   assert.ok(!JSON.stringify(stats).includes(directory));
   // После первой записи делаем путь недоступным: ход всё равно отвечает 200.

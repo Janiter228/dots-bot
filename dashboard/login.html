@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <title>Точки · Вход</title>
+  <style>
+    :root { color-scheme: light dark; font: 16px system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100dvh; display: grid; place-items: center; padding: 1rem; background: Canvas; color: CanvasText; }
+    main { width: min(100%, 25rem); padding: clamp(1.25rem, 5vw, 2rem); border: 1px solid GrayText; border-radius: .75rem; }
+    h1 { margin: 0 0 1.25rem; font: 700 1.7rem Georgia, serif; }
+    nav { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+    label, input, form button { display: block; width: 100%; }
+    input, button { font: inherit; padding: .55rem .7rem; border: 1px solid GrayText; border-radius: .35rem; }
+    input { margin: .35rem 0 .8rem; }
+    button { cursor: pointer; }
+    button[aria-pressed="true"], form button { background: #355b9e; border-color: #355b9e; color: white; }
+    :focus-visible { outline: 2px solid #779ee7; outline-offset: 2px; }
+    p { margin: .9rem 0 0; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main aria-labelledby="title">
+    <h1 id="title">Вход в панель</h1>
+    <nav aria-label="Способ входа">
+      <button id="project-access" type="button" hidden>Наш токен</button>
+      <button id="manual-access" type="button" hidden>Токен панели</button>
+    </nav>
+    <form id="login" hidden>
+      <label id="credential-label" for="credential">Пароль</label>
+      <input id="credential" type="password" autocomplete="current-password" required>
+      <button id="submit" type="submit">Войти</button>
+    </form>
+    <p id="message" role="status" hidden></p>
+    <noscript><p>Для входа включите JavaScript.</p></noscript>
+  </main>
+  <script>
+    const byId = id => document.getElementById(id);
+    const form = byId('login');
+    const project = byId('project-access');
+    const manual = byId('manual-access');
+    const credential = byId('credential');
+    const submit = byId('submit');
+    const message = byId('message');
+    const canUsePassword = document.body.dataset.passwordAccess === 'true';
+    const canUseToken = document.body.dataset.tokenAccess === 'true';
+    let passwordMode;
+
+    function showMessage(text) {
+      message.textContent = text;
+      message.hidden = !text;
+    }
+
+    function selectMode(usePassword) {
+      passwordMode = usePassword;
+      project.setAttribute('aria-pressed', String(usePassword));
+      manual.setAttribute('aria-pressed', String(!usePassword));
+      byId('credential-label').textContent = usePassword ? 'Пароль' : 'Токен панели';
+      credential.inputMode = usePassword ? 'numeric' : 'text';
+      if (usePassword) {
+        credential.pattern = '[0-9]{4}';
+        credential.maxLength = 4;
+      } else {
+        credential.removeAttribute('pattern');
+        credential.removeAttribute('maxlength');
+      }
+      credential.value = '';
+      showMessage('');
+      credential.focus();
+    }
+
+    project.hidden = !canUsePassword;
+    manual.hidden = !canUseToken || !canUsePassword;
+    if (canUsePassword || canUseToken) {
+      form.hidden = false;
+      selectMode(canUsePassword);
+    } else {
+      showMessage('Вход в панель пока не настроен.');
+    }
+    project.addEventListener('click', () => selectMode(true));
+    manual.addEventListener('click', () => selectMode(false));
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (submit.disabled) return;
+      const value = credential.value.trim();
+      credential.value = '';
+      submit.disabled = project.disabled = manual.disabled = true;
+      showMessage('Входим…');
+      let signedIn = false;
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (!passwordMode) headers.Authorization = `Bearer ${value}`;
+        const response = await fetch('/api/dashboard-session', {
+          method: 'POST', headers,
+          body: JSON.stringify(passwordMode ? { password: value } : {}),
+          signal: AbortSignal.timeout(6000),
+        });
+        if (response.ok) {
+          signedIn = true;
+          location.replace('/');
+        } else if (response.status === 401) {
+          showMessage(passwordMode ? 'Неверный пароль.' : 'Неверный токен.');
+        } else if (response.status === 429) {
+          showMessage('Слишком много попыток. Попробуйте через минуту.');
+        } else {
+          showMessage('Вход сейчас недоступен.');
+        }
+      } catch {
+        showMessage('Не удалось связаться с сервером.');
+      } finally {
+        if (!signedIn) {
+          submit.disabled = project.disabled = manual.disabled = false;
+          credential.focus();
+        }
+      }
+    });
+  </script>
+</body>
+</html>

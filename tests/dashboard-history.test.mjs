@@ -22,7 +22,7 @@ async function historyFile(t) {
 }
 
 async function start(t, dashboard, restart) {
-  const server = createBotServer({ botToken: '', dashboardToken: token, dashboardAccessPasswordHash: passwordHash, dashboard, restart });
+  const server = createBotServer({ botToken: '', dashboardToken: token, dashboardAccessPasswordHash: passwordHash, dashboardAccessTokenHash: 'a'.repeat(64), dashboard, restart });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(() => {
@@ -40,18 +40,58 @@ function post(body, headers = {}) {
   return { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
 }
 
-test('перезапуск требует входа в панель и того же хеша PIN', async t => {
+function sessionCookie(response) {
+  const cookie = response.headers.get('set-cookie');
+  assert.match(cookie, /Path=\/;.*HttpOnly; SameSite=Strict/);
+  return { Cookie: cookie.split(';')[0] };
+}
+
+test('сервер показывает только вход до авторизации и снова после выхода', async t => {
+  const api = await start(t, createDashboard());
+  for (const route of ['/', '/index.html', '/%69ndex.html']) {
+    const response = await api(route);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    const html = await response.text();
+    assert.match(html, /Наш токен/);
+    assert.doesNotMatch(html, /id="(?:board|metrics-title|games|toggle-bot|restart-dialog)"/);
+  }
+  assert.equal((await api('/api/status')).status, 401);
+  assert.equal((await api('/api/games')).status, 401);
+  assert.equal((await api('/v1/health')).status, 200);
+  assert.equal((await api('/api/dashboard-session', post({ password: '0000' }))).status, 401);
+  const login = await api('/api/dashboard-session', post({ password }));
+  assert.equal(login.status, 200);
+  const headers = sessionCookie(login);
+  const panel = await (await api('/', { headers })).text();
+  assert.match(panel, /id="board"/);
+  assert.doesNotMatch(panel, /type="password"/);
+  assert.equal((await api('/api/status', { headers })).status, 200);
+  const logout = await api('/api/dashboard-session/logout', post({}, headers));
+  assert.equal(logout.status, 200);
+  assert.match(logout.headers.get('set-cookie'), /Max-Age=0/);
+  assert.match(await (await api('/', { headers })).text(), /Вход в панель/);
+  assert.equal((await api('/api/games', { headers })).status, 401);
+});
+
+test('перезапуск доступен после входа через «Наш токен» без повторного PIN', async t => {
   let requested = 0;
   const api = await start(t, createDashboard(), () => requested++);
-  const restart = (pin, headers) => api('/api/restart', post({ password: pin }, headers));
-  assert.equal((await restart(password, {})).status, 401);
-  assert.equal((await restart('0000', auth)).status, 401);
+  const restart = (headers) => api('/api/restart', post({}, headers));
+  assert.equal((await restart()).status, 401);
+  assert.equal((await restart(auth)).status, 403);
+  const tokenLogin = await api('/api/dashboard-session', post({}, auth));
+  const tokenSession = sessionCookie(tokenLogin);
+  assert.equal((await api('/api/games', { headers: tokenSession })).status, 200);
+  assert.equal((await restart(tokenSession)).status, 403);
   assert.equal(requested, 0);
-  const status = await (await api('/api/status')).json();
-  const response = await restart(password, auth);
+  const headers = sessionCookie(await api('/api/dashboard-session', post({ password })));
+  const status = await (await api('/api/status', { headers })).json();
+  assert.equal(status.canRestart, true);
+  const response = await restart(headers);
   assert.equal(response.status, 202);
   assert.deepEqual(await response.json(), { instanceId: status.instanceId });
-  assert.equal((await restart(password, auth)).status, 202);
+  assert.equal((await restart(headers)).status, 202);
   assert.equal(requested, 1);
 });
 
@@ -87,7 +127,8 @@ test('кнопка удаления удаляет все отмеченные �
     assert.equal((await api('/v1/move', post({ ...input, gameId }))).status, 200);
   }
   const list = async () => (await api('/api/games', { headers: auth })).json();
-  const response = await api('/');
+  const headers = sessionCookie(await api('/api/dashboard-session', post({}, auth)));
+  const response = await api('/', { headers });
   assert.equal(response.status, 200);
   const html = await response.text();
   const button = {};
@@ -99,8 +140,8 @@ test('кнопка удаления удаляет все отмеченные �
   const messages = [];
   const questions = [];
   const context = {
-    byId, AbortController, AbortSignal, fetch: api, token,
-    authenticated: true, game: { id: openId }, selected: openId,
+    byId, AbortController, AbortSignal, fetch: (route, options) => api(route, { ...options, headers }),
+    game: { id: openId }, selected: openId,
     games: await list(), markedGames: new Set(), deleteRequest: null,
     confirm: question => { questions.push(question); return true; },
     notice: (_id, message) => messages.push(message),
@@ -109,7 +150,6 @@ test('кнопка удаления удаляет все отмеченные �
   const scripts = [
     /    const gameDetailPath = .*;/,
     /    async function fetchJson\([\s\S]+?\n    }/,
-    /    function authHeaders\([\s\S]+?\n    }/,
     /    function renderDeleteButton\([\s\S]+?\n    }/,
     /    byId\('games'\)\.addEventListener\('change',[\s\S]+?\n    \}\);/,
     /    byId\('delete-game'\)\.addEventListener\('click',[\s\S]+?\n    \}\);/,
