@@ -618,6 +618,57 @@ function threats(board, width, height, redCode) {
   };
 }
 
+function holdsAgainstCaptures(board, width, height, redCode, minimum, deadline) {
+  if (materialScore(board) < minimum || performance.now() >= deadline) return false;
+  const territory = enclosed(board, width, height, OUR_LIVE);
+  return captureMoves(board, width, height, ENEMY_LIVE, OUR_LIVE, territory, redCode).every(({ index }) => {
+    if (performance.now() >= deadline) return false;
+    const leaf = applyMove(board, index, width, height, ENEMY_LIVE, OUR_LIVE, territory, redCode).board;
+    return materialScore(leaf) >= minimum;
+  });
+}
+
+// Для каждого первого ответа нужен хотя бы один способ удержать счёт до конца горизонта.
+function holdsAfterBlock(board, width, height, redCode, minimum, deadline) {
+  const territory = enclosed(board, width, height, OUR_LIVE);
+  for (let index = 0; index < board.length; index++) {
+    if (board[index] !== EMPTY) continue;
+    if (performance.now() >= deadline) return false;
+    const reply = applyMove(board, index, width, height, ENEMY_LIVE, OUR_LIVE, territory, redCode).board;
+    const { ours, enemy, attacks, dangers } = threats(reply, width, height, redCode);
+    const answers = new Set([...attacks, ...dangers].map(move => move.index));
+    const quiet = findFreeIndex(reply, width, height, ours, enemy);
+    if (quiet >= 0) answers.add(quiet);
+    const holds = [...answers].some(answer => {
+      if (performance.now() >= deadline) return false;
+      const after = applyMove(reply, answer, width, height, OUR_LIVE, ENEMY_LIVE, enemy, redCode).board;
+      return holdsAgainstCaptures(after, width, height, redCode, minimum, deadline);
+    });
+    if (!holds) return false;
+  }
+  return performance.now() < deadline;
+}
+
+function preventLateFork(board, width, height, redCode, { ours, enemy }, deadline) {
+  const minimumLoss = 6;
+  const initial = materialScore(board);
+  const simulate = (position, index, color) =>
+    applyMove(position, index, width, height, color, 3 - color, undefined, redCode).board;
+  for (let index = 0; index < board.length; index++) {
+    if (board[index] !== EMPTY || ours[index] || enemy[index]) continue;
+    if (performance.now() >= deadline) break;
+    const prepared = applyMove(board, index, width, height, ENEMY_LIVE, OUR_LIVE, ours, redCode).board;
+    const territory = enclosed(prepared, width, height, OUR_LIVE);
+    const closures = captureMoves(prepared, width, height, ENEMY_LIVE, OUR_LIVE, territory, redCode);
+    if ((closures[1]?.count ?? 0) < minimumLoss) continue;
+    const loss = unavoidableForkLoss(prepared, closures.slice(0, 4).map(move => move.index), simulate, deadline);
+    if (loss === null || loss < minimumLoss) continue;
+    const blocked = applyMove(board, index, width, height, OUR_LIVE, ENEMY_LIVE, enemy, redCode).board;
+    if (holdsAfterBlock(blocked, width, height, redCode, initial, deadline)) return index;
+  }
+  return -1;
+}
+
 // Достаточно одного ответа соперника, удерживающего потолок размена.
 function keepsTradeAtFloor(board, width, height, redCode, floor, deadline) {
   const enemyZone = enclosed(board, width, height, ENEMY_LIVE);
@@ -652,14 +703,7 @@ function provesBetterDelayedCapture(board, width, height, redCode, floor, deadli
     const survives = closures.some(({ index: closure }) => {
       if (reply[closure] !== EMPTY || performance.now() >= deadline) return false;
       const after = applyMove(reply, closure, width, height, OUR_LIVE, ENEMY_LIVE, replyZone, redCode).board;
-      if (materialScore(after) <= floor) return false;
-      const territory = enclosed(after, width, height, OUR_LIVE);
-      const counters = captureMoves(after, width, height, ENEMY_LIVE, OUR_LIVE, territory, redCode);
-      return counters.every(({ index: counter }) => {
-        if (performance.now() >= deadline) return false;
-        const leaf = applyMove(after, counter, width, height, ENEMY_LIVE, OUR_LIVE, territory, redCode).board;
-        return materialScore(leaf) > floor;
-      });
+      return holdsAgainstCaptures(after, width, height, redCode, floor + 1, deadline);
     });
     if (!survives) return false;
   }
@@ -926,6 +970,12 @@ export function chooseMove(request, { advice, checkpoint } = {}) {
 
   const forced = [...attacks, ...blocks].map(({ index }) => index);
   const ordinaryDeadline = started + thinkBudget * 0.8;
+  if (attacks.length === 0 && dangers.length === 0 && board.length >= 100 && board.length <= 400
+    && freeCount > 7 && freeCount <= 100 && thinkBudget >= 150) {
+    const forkDeadline = Math.min(ordinaryDeadline, performance.now() + Math.min(90, thinkBudget * 0.2));
+    const block = preventLateFork(board, width, height, redCode, rootThreats, forkDeadline);
+    if (block >= 0) return moveAt(block);
+  }
   let analysis;
   if (TACTICS.frontierAnalysis) {
     try {
