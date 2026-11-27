@@ -8,7 +8,7 @@ import { createDashboard } from '../server/dashboard.js';
 import { createBotServer } from '../server/index.js';
 
 async function start(t, options) {
-  const server = createBotServer({ botToken: '', ...options });
+  const server = createBotServer({ botToken: '', dashboardToken: TOKEN, ...options });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', resolve);
@@ -39,15 +39,15 @@ test('панель и фавиконы доступны через GET и HEAD',
     const page = await get(port, route);
     assert.equal(page.status, 200);
     assert.equal(page.headers['content-type'], 'text/html; charset=utf-8');
-    assert.equal(page.headers['cache-control'], 'no-cache');
+    assert.equal(page.headers['cache-control'], 'no-store');
     assert.equal(page.headers['access-control-allow-origin'], undefined);
-    assert.match(page.body, /<title>Dots Bot · панель<\/title>/);
-    const inline = page.body.match(/rel="icon" type="image\/svg\+xml" href="data:image\/svg\+xml,([^"]+)"/);
-    assert.ok(inline);
+    assert.match(page.body, /<title>Точки · Вход<\/title>/);
+    assert.doesNotMatch(page.body, /id="(?:metrics-title|board|games|toggle-bot)"/);
+    assert.match(page.body, /href="\/favicon\.svg"/);
     const icon = await get(port, '/favicon.svg');
     assert.equal(icon.status, 200);
     assert.equal(icon.headers['content-type'], 'image/svg+xml');
-    assert.equal(decodeURIComponent(inline[1]), icon.body.trim());
+
     const head = await get(port, route, 'HEAD');
     assert.equal(head.status, 200);
     assert.equal(head.headers['content-length'], page.headers['content-length']);
@@ -138,7 +138,7 @@ test('новая песочница на меньшем поле пересчи�
   assert.deepEqual(original.moves.map(({ moveNo }) => moveNo), [1, 3]);
   assert.deepEqual(restarted.moves.map(({ moveNo }) => moveNo), [1, 1]);
   assert.deepEqual(restarted.snapshot.points, second.points);
-  assert.equal((await jsonOk(await api(port, '/api/status'))).errors, 0);
+  assert.equal((await jsonOk(await gamesApi(port, '/api/status'))).errors, 0);
   const recent = await jsonOk(await gamesApi(port, '/api/recent-moves'));
   assert.deepEqual(recent.map(({ sessionId, moveNo }) => [sessionId, moveNo]), [
     ['sandbox#2', 1], ['sandbox', 3], ['sandbox', 1],
@@ -188,7 +188,7 @@ test('долгая пауза сохраняет партию и кэш, сбр�
   now += 3_600_000;
   assert.equal((await jsonOk(await gamesApi(port, '/api/games/web-old'))).active, true);
   assert.deepEqual(await jsonOk(await move(port, { ...first, moveTimeoutMs: 1 }, auth)), opening);
-  assert.equal((await jsonOk(await api(port, '/api/status'))).fallbackMoves, 0);
+  assert.equal((await jsonOk(await gamesApi(port, '/api/status'))).fallbackMoves, 0);
   const next = { ...first, moveNo: 3, points: { red: [[opening.x, opening.y]], blue: [[0, 0]] } };
   await jsonOk(await move(port, next, auth));
   assert.deepEqual((await jsonOk(await gamesApi(port))).map(({ id, active }) => [id, active]), [['web-old', true]]);
@@ -231,23 +231,17 @@ test('панель удерживает ручной выбор, переклю�
   assert.equal(chooseSession(games, [old], null, true), old.id);
 });
 
-test('метрики открыты, а список и отдельная партия защищены токеном панели', async (t) => {
-  const previous = process.env.DASHBOARD_TOKEN;
-  process.env.DASHBOARD_TOKEN = TOKEN;
-  t.after(() => {
-    if (previous === undefined) delete process.env.DASHBOARD_TOKEN;
-    else process.env.DASHBOARD_TOKEN = previous;
-  });
+test('метрики и история включённой панели требуют авторизацию', async (t) => {
   const configured = await start(t);
   const closed = await start(t, { dashboardToken: '', serveDashboard: false });
-  for (const port of [configured, closed]) {
-    const stats = await jsonOk(await api(port, '/api/status'));
-    assert.equal(stats.version, BOT_VERSION);
-    assert.equal(stats.moves, 0);
-    assert.equal(stats.lastRequestAt, null);
-    assert.equal(stats.games, undefined);
-    assert.ok(!JSON.stringify(stats).includes(TOKEN));
-  }
+  assert.equal((await api(configured, '/api/status')).status, 401);
+  const stats = await jsonOk(await gamesApi(configured, '/api/status'));
+  assert.equal(stats.version, BOT_VERSION);
+  assert.equal(stats.moves, 0);
+  assert.equal(stats.lastRequestAt, null);
+  assert.equal(stats.games, undefined);
+  assert.ok(!JSON.stringify(stats).includes(TOKEN));
+  assert.equal((await api(closed, '/api/status')).status, 200);
   for (const path of ['/api/games', '/api/games/any', '/api/recent-moves']) {
     const forbidden = await gamesApi(closed, path);
     assert.equal(forbidden.status, 403);
@@ -315,7 +309,7 @@ test('история хранит ходы, режим и последний с�
   assert.deepEqual(game.snapshot.score, position.score);
   assert.equal(game.snapshot.moveNo, 4);
   assert.doesNotMatch(JSON.stringify(game), /test-bot-token|test-dashboard-token|authorization/i);
-  const stats = await jsonOk(await api(port, '/api/status'));
+  const stats = await jsonOk(await gamesApi(port, '/api/status'));
   assert.equal(stats.moves, 3);
   assert.equal(stats.errors, 2);
   assert.equal(stats.fallbackMoves, 0);
@@ -341,7 +335,7 @@ test('из 10 000 запросов для одной партии история
   assert.equal(game.moves.length, 3000);
   assert.equal(game.moves[0].moveNo, 7001);
   assert.equal(game.snapshot.moveNo, 10000);
-  assert.equal((await jsonOk(await api(port, '/api/status'))).moves, 10000);
+  assert.equal((await jsonOk(await gamesApi(port, '/api/status'))).moves, 10000);
 });
 
 test('ошибка записи истории не меняет ответ хода и идемпотентность', async (t) => {
@@ -349,7 +343,7 @@ test('ошибка записи истории не меняет ответ хо
   const spy = t.mock.method(dashboard, 'record', () => { throw new Error('Сбой тестового сборщика'); });
   const port = await start(t, { dashboard });
   assert.deepEqual(await jsonOk(await move(port)), await jsonOk(await move(port)));
-  assert.equal((await jsonOk(await api(port, '/api/status'))).recordingErrors, 2);
+  assert.equal((await jsonOk(await gamesApi(port, '/api/status'))).recordingErrors, 2);
   assert.equal(spy.mock.callCount(), 2);
 });
 
@@ -368,12 +362,13 @@ test('воспроизведение учитывает пропущенный �
   assert.equal(JSON.stringify(liveConnections(snapshot.points.blue, [[3, 4]])), '[[[2,2],[3,3]]]');
 });
 
-test('управление ботом требует доступ к панели и PIN, панель доступна в паузе', async t => {
+test('управление ботом использует сессию через «Наш токен», панель доступна в паузе', async t => {
   const { scryptSync } = await import('node:crypto');
   const salt = Buffer.alloc(16);
   const password = '1234';
   const port = await start(t, {
     dashboardToken: 'test-dashboard',
+    dashboardAccessTokenHash: 'a'.repeat(64),
     dashboardAccessPasswordHash: salt.toString('hex') + ':' + scryptSync(password, salt, 32).toString('hex'),
   });
   const url = 'http://127.0.0.1:' + port;
@@ -381,15 +376,18 @@ test('управление ботом требует доступ к панел�
     method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body),
   });
   const auth = { Authorization: 'Bearer test-dashboard' };
-  assert.equal((await post('/api/bot-state', { password, enabled: false })).status, 401);
-  assert.equal((await post('/api/bot-state', { password: '4321', enabled: false }, auth)).status, 401);
-  assert.deepEqual(await (await post('/api/bot-state', { password, enabled: false }, auth)).json(), { botEnabled: false });
+  assert.equal((await post('/api/bot-state', { enabled: false })).status, 401);
+  assert.equal((await post('/api/bot-state', { password, enabled: false }, auth)).status, 403);
+  const login = await post('/api/dashboard-session', { password });
+  assert.equal(login.status, 200);
+  const session = { Cookie: login.headers.get('set-cookie').split(';')[0] };
+  assert.deepEqual(await (await post('/api/bot-state', { enabled: false }, session)).json(), { botEnabled: false });
   const input = { gameId: 'pause-test', moveNo: 1, you: 'red', field: { width: 20, height: 20 },
     points: { red: [], blue: [] }, last: null };
   const paused = await post('/v1/move', input);
   assert.equal(paused.status, 503);
   assert.equal((await paused.json()).error.code, 'bot_disabled');
-  assert.equal((await get(port, '/')).status, 200);
-  assert.deepEqual(await (await post('/api/bot-state', { password, enabled: true }, auth)).json(), { botEnabled: true });
+  assert.match(await (await api(port, '/', { headers: session })).text(), /id="board"/);
+  assert.deepEqual(await (await post('/api/bot-state', { enabled: true }, session)).json(), { botEnabled: true });
   assert.deepEqual(await (await post('/v1/move', input)).json(), { x: 10, y: 10 });
 });

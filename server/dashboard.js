@@ -1,7 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { addDashboardAccessControls } from './dashboard-access.js';
 import { fileURLToPath } from 'node:url';
 import { applyMove, BOT_VERSION } from '../bot/index.js';
 import {
@@ -19,7 +18,7 @@ const TYPES = new Map([
   ['.json', 'application/json; charset=utf-8'],
 ]);
 
-export async function serveDashboardFile(req, res, rawPath, passwordAccess = false) {
+export async function serveDashboardFile(req, res, rawPath, { signedIn, passwordAccess, tokenAccess }) {
   if (!['GET', 'HEAD'].includes(req.method) || !rawPath.startsWith('/')) return false;
 
   let relative;
@@ -41,7 +40,8 @@ export async function serveDashboardFile(req, res, rawPath, passwordAccess = fal
   const isIndex = relative === '' || relative === 'index.html';
   const type = isIndex ? 'text/html; charset=utf-8' : TYPES.get(path.extname(relative));
   if (!type) return false;
-  const file = path.resolve(ROOT, isIndex ? 'index.html' : relative);
+  if (!isIndex && !signedIn && relative !== 'favicon.svg') return false;
+  const file = path.resolve(ROOT, isIndex ? (signedIn ? 'index.html' : 'login.html') : relative);
   if (!file.startsWith(ROOT_PREFIX)) return false;
 
   let size;
@@ -52,10 +52,11 @@ export async function serveDashboardFile(req, res, rawPath, passwordAccess = fal
     const info = await stat(target);
     if (!info.isFile()) return false;
     size = info.size;
-    if (isIndex && passwordAccess) {
-      const html = addDashboardAccessControls(await readFile(target, 'utf8'));
-      size = Buffer.byteLength(html);
-      if (req.method === 'GET') body = Buffer.from(html);
+    if (isIndex && !signedIn) {
+      const html = await readFile(target, 'utf8');
+      const login = Buffer.from(html.replace('<body>', `<body data-password-access="${passwordAccess}" data-token-access="${tokenAccess}">`));
+      size = login.length;
+      if (req.method === 'GET') body = login;
     } else if (req.method === 'GET') {
       body = await readFile(target);
     }
@@ -66,7 +67,7 @@ export async function serveDashboardFile(req, res, rawPath, passwordAccess = fal
   res.writeHead(200, {
     'Content-Type': type,
     'Content-Length': body?.length ?? size,
-    'Cache-Control': 'no-cache',
+    'Cache-Control': isIndex ? 'no-store' : 'no-cache',
   });
   res.end(body);
   return true;

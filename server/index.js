@@ -228,17 +228,20 @@ export function createBotServer({
     activityOrder = Math.max(activityOrder, session.activityOrder);
   }
 
+  function validDashboardToken(authorization) {
+    const supplied = Buffer.from(authorization);
+    return expectedAuthorization && supplied.length === expectedAuthorization.length &&
+      timingSafeEqual(supplied, expectedAuthorization);
+  }
+
   function requireDashboardAccess(req, res) {
     if (!expectedAuthorization && !passwordAccess) {
       sendError(res, 403, 'forbidden', 'Чтобы открыть партии, задайте DASHBOARD_TOKEN на сервере');
       return false;
     }
     const authorization = req.headers.authorization ?? '';
-    const supplied = Buffer.from(authorization);
-    const matchesBearer = expectedAuthorization && supplied.length === expectedAuthorization.length &&
-      timingSafeEqual(supplied, expectedAuthorization);
-    if (matchesBearer || (passwordAccess && !authorization && dashboardAccess.hasSession(req))) return true;
-    sendError(res, 401, 'unauthorized', 'Введите действующий токен панели');
+    if (validDashboardToken(authorization) || (!authorization && dashboardAccess.hasSession(req))) return true;
+    sendError(res, 401, 'unauthorized', 'Войдите в панель');
     return false;
   }
   async function exportGames(req, res) {
@@ -296,7 +299,7 @@ export function createBotServer({
   return http.createServer(async (req, res) => {
     const rawPath = (req.url || '/').split('?', 1)[0];
     if (!rawPath.startsWith('/v1/')) {
-      if (passwordAccess && req.method === 'POST' &&
+      if (serveDashboard && req.method === 'POST' &&
           (rawPath === '/api/dashboard-session' || rawPath === '/api/dashboard-session/logout')) {
         const contentType = (req.headers['content-type'] ?? '').split(';', 1)[0].trim().toLowerCase();
         if (contentType !== 'application/json') {
@@ -315,6 +318,20 @@ export function createBotServer({
           sendError(res, error.statusCode ?? 400, error.code ?? 'invalid_request', 'Не удалось прочитать запрос');
           return;
         }
+        const authorization = req.headers.authorization;
+        if (authorization) {
+          if (!validDashboardToken(authorization)) {
+            sendError(res, 401, 'unauthorized', 'Неверный токен');
+            return;
+          }
+          dashboardAccess.startTokenSession(req, res);
+          sendJson(res, 200, { ok: true });
+          return;
+        }
+        if (!passwordAccess) {
+          sendError(res, 503, 'login_unavailable', 'Вход по паролю не настроен');
+          return;
+        }
         const status = dashboardAccess.signIn(req, res, body?.password);
         if (status === 200) sendJson(res, 200, { ok: true });
         else if (status === 429) sendError(res, 429, 'too_many_attempts', 'Слишком много попыток');
@@ -322,13 +339,20 @@ export function createBotServer({
         return;
       }
       if (req.method === 'GET' && rawPath === '/api/status') {
-        sendJson(res, 200, { ...dashboard.status(BOT_VERSION), gameLogs: gameLogs.status(), instanceId, botEnabled });
+        if (serveDashboard && !requireDashboardAccess(req, res)) return;
+        const canControl = passwordAccess && dashboardAccess.hasProjectSession(req);
+        sendJson(res, 200, { ...dashboard.status(BOT_VERSION), gameLogs: gameLogs.status(), instanceId, botEnabled,
+          canControl, canRestart: canControl && Boolean(restart) });
         return;
       }
       if (serveDashboard && req.method === 'POST' && ['/api/restart', '/api/bot-state'].includes(rawPath)) {
         const changeState = rawPath === '/api/bot-state';
         if (!requireDashboardAccess(req, res)) return;
-        if ((!changeState && !restart) || !dashboardAccess.passwordConfigured) {
+        if (!passwordAccess || !dashboardAccess.hasProjectSession(req)) {
+          sendError(res, 403, 'forbidden', 'Для управления ботом войдите через «Наш токен»');
+          return;
+        }
+        if (!changeState && !restart) {
           sendError(res, 503, 'restart_unavailable', 'Перезапуск не настроен на сервере');
           return;
         }
@@ -343,14 +367,8 @@ export function createBotServer({
           sendError(res, error.statusCode ?? 400, error.code ?? 'invalid_request', 'Не удалось прочитать запрос');
           return;
         }
-        const status = dashboardAccess.verifyPassword(res, body?.password);
-        if (status !== 200) {
-          sendError(res, status, status === 429 ? 'too_many_attempts' : 'unauthorized',
-            status === 429 ? 'Слишком много попыток' : 'Неверный пароль');
-          return;
-        }
         if (changeState) {
-          if (typeof body.enabled !== 'boolean') {
+          if (typeof body?.enabled !== 'boolean') {
             sendError(res, 400, 'bad_request', 'Укажите логическое значение enabled');
             return;
           }
@@ -421,7 +439,9 @@ export function createBotServer({
         sendError(res, 404, 'not_found', 'Партия не найдена');
         return;
       }
-      if (serveDashboard && await serveDashboardFile(req, res, rawPath, passwordAccess)) return;
+      if (serveDashboard && await serveDashboardFile(req, res, rawPath, {
+        signedIn: dashboardAccess.hasSession(req), passwordAccess, tokenAccess: Boolean(expectedAuthorization),
+      })) return;
       sendError(res, 404, 'not_found', 'Маршрут не найден');
       return;
     }

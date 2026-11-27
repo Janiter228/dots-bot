@@ -1,6 +1,6 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
-const SESSION_COOKIE = 'dots_dashboard_session';
+const SESSION_COOKIE = 'dots_panel_session';
 const SESSION_SECONDS = 3600;
 const ATTEMPT_WINDOW_MS = 60_000;
 const ATTEMPT_LIMIT = 5;
@@ -17,13 +17,29 @@ export function createDashboardAccess({ tokenHash, passwordHash }) {
   let attempts = 0;
 
   function sessionKey(req) {
-    const value = (req.headers.cookie ?? '').match(/(?:^|;\s*)dots_dashboard_session=([a-f0-9]{64})(?=;|$)/)?.[1];
+    const value = (req.headers.cookie ?? '').match(/(?:^|;\s*)dots_panel_session=([a-f0-9]{64})(?=;|$)/)?.[1];
     return value && hash(tokenHash + value);
   }
 
   function setCookie(req, res, value, maxAge) {
     const secure = req.socket.encrypted || req.headers['x-forwarded-proto'] === 'https';
-    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${value}; Path=/api; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`);
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`);
+  }
+
+  function getSession(req) {
+    const session = sessions.get(sessionKey(req));
+    return session?.expires > Date.now() ? session : undefined;
+  }
+
+  function startSession(req, res, project) {
+    const now = Date.now();
+    for (const [key, session] of sessions) {
+      if (session.expires <= now) sessions.delete(key);
+    }
+    sessions.delete(sessionKey(req));
+    const value = randomBytes(32).toString('hex');
+    sessions.set(hash(tokenHash + value), { expires: now + SESSION_SECONDS * 1000, project });
+    setCookie(req, res, value, SESSION_SECONDS);
   }
 
   function verifyPassword(res, password) {
@@ -49,21 +65,18 @@ export function createDashboardAccess({ tokenHash, passwordHash }) {
   return {
     enabled,
     hasSession(req) {
-      return sessions.get(sessionKey(req)) > Date.now();
+      return Boolean(getSession(req));
     },
-    passwordConfigured: Boolean(passwordConfig),
-    verifyPassword,
+    hasProjectSession(req) {
+      return getSession(req)?.project === true;
+    },
+    startTokenSession(req, res) {
+      startSession(req, res, false);
+    },
     signIn(req, res, password) {
       const status = verifyPassword(res, password);
       if (status !== 200) return status;
-      const now = Date.now();
-      for (const [key, expires] of sessions) {
-        if (expires <= now) sessions.delete(key);
-      }
-      sessions.delete(sessionKey(req));
-      const value = randomBytes(32).toString('hex');
-      sessions.set(hash(tokenHash + value), now + SESSION_SECONDS * 1000);
-      setCookie(req, res, value, SESSION_SECONDS);
+      startSession(req, res, true);
       return 200;
     },
     signOut(req, res) {
@@ -71,66 +84,4 @@ export function createDashboardAccess({ tokenHash, passwordHash }) {
       setCookie(req, res, '', 0);
     },
   };
-}
-
-export function addDashboardAccessControls(html) {
-  return html.replace(
-    '          </form>\n          <label id="follow-label"',
-    `            <button id="project-access" type="button" style="margin-top: .5rem">Наш токен</button>
-          </form>
-          <dialog id="project-access-dialog" aria-labelledby="project-access-label" style="max-width:calc(100% - 2rem); background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:.5rem">
-            <form id="project-access-form" autocomplete="off">
-              <label id="project-access-label" for="project-password">Пароль для нашего токена</label>
-              <div class="auth-entry">
-                <input id="project-password" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" required autofocus>
-                <button type="submit" class="primary">Активировать</button>
-                <button id="project-access-cancel" type="button">Отмена</button>
-              </div>
-              <p id="project-access-error" class="notice" role="status" hidden></p>
-            </form>
-          </dialog>
-          <label id="follow-label"`
-  ).replace(
-    '    schedule();\n    refreshGames(false, true);',
-    `    const accessDialog = byId('project-access-dialog');
-    const accessPassword = byId('project-password');
-    const accessSubmit = byId('project-access-form').querySelector('[type=submit]');
-    byId('project-access').addEventListener('click', () => {
-      accessPassword.value = '';
-      notice('project-access-error', '');
-      accessDialog.showModal();
-    });
-    byId('project-access-cancel').addEventListener('click', () => accessDialog.close());
-    accessDialog.addEventListener('cancel', (event) => {
-      if (accessSubmit.disabled) event.preventDefault();
-    });
-    byId('project-access-form').addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const password = accessPassword.value;
-      accessPassword.value = '';
-      accessSubmit.disabled = true;
-      byId('project-access-cancel').disabled = true;
-      notice('project-access-error', '');
-      try {
-        await fetchJson('/api/dashboard-session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password }),
-        });
-        token = '';
-        byId('token').value = '';
-        accessDialog.close();
-        await refreshGames(true, true);
-      } catch (error) {
-        notice('project-access-error', error.status === 401 ? 'Неверный пароль' :
-          error.status === 429 ? 'Слишком много попыток. Попробуйте через минуту.' : 'Вход сейчас недоступен.');
-        accessPassword.focus();
-      } finally {
-        accessSubmit.disabled = false;
-        byId('project-access-cancel').disabled = false;
-      }
-    });
-    schedule();
-    refreshGames(false, true);`
-  );
 }

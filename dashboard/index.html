@@ -106,7 +106,6 @@
     .follow-session input { min-height: 0; margin: 0; accent-color: var(--accent); }
     .game-link[aria-pressed="true"] { border-color: var(--accent); background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
     #game-title { overflow-wrap: anywhere; }
-    #auth label { display: block; font-weight: bold; }
     dialog { max-width: calc(100% - 2rem); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: .5rem; }
     .auth-entry { display: flex; gap: .4rem; margin-top: .35rem; }
     .auth-entry input { width: 100%; min-width: 0; }
@@ -188,16 +187,15 @@
       <div class="tools">
         <div class="meta"><span id="health" data-state="pending">Проверяем связь</span><span id="version"></span><span id="uptime"></span></div>
         <button id="theme" type="button" aria-label="Переключить тему">Тема</button>
-        <button id="refresh" type="button" class="primary">Обновить</button>
-        <button id="toggle-bot" type="button" disabled>Выключить бота</button>
+        <button id="refresh" type="button" class="primary" hidden>Обновить</button>
+        <button id="toggle-bot" type="button" hidden disabled>Выключить бота</button>
       </div>
     </div>
   </header>
   <dialog id="restart-dialog" aria-labelledby="restart-label">
     <form id="restart-form" autocomplete="off">
-      <label id="restart-label" for="restart-password">Пароль для перезапуска бота</label>
+      <h2 id="restart-label">Перезапустить бота?</h2>
       <div class="auth-entry">
-        <input id="restart-password" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" required autofocus>
         <button type="submit" class="primary">Перезапустить</button>
         <button id="restart-cancel" type="button">Отмена</button>
       </div>
@@ -230,7 +228,7 @@
       </div>
       <span id="copy-message" class="caption" role="status"></span>
     </section>
-    <section id="recent" class="box recent" aria-labelledby="recent-title" hidden>
+    <section id="recent" class="box recent" aria-labelledby="recent-title">
       <header class="box-head"><h2 id="recent-title">Последние ходы</h2><span class="caption">Все партии</span></header>
       <p id="recent-empty" class="box-body caption">Ходы появятся после первого ответа бота.</p>
       <p id="recent-message" class="box-body notice" role="status" hidden></p>
@@ -255,7 +253,7 @@
         </div>
         <div class="board-shell">
           <div id="board-loading" class="skeleton" role="status" aria-label="Загрузка партии" hidden></div>
-          <p id="empty-board" class="empty">Войдите в историю и выберите партию.</p>
+          <p id="empty-board" class="empty">Здесь появится поле партии.</p>
           <canvas id="board" tabindex="0" role="img" aria-label="Последняя позиция на поле" hidden></canvas>
         </div>
         <div id="game-detail" hidden>
@@ -277,14 +275,10 @@
         </div>
       </article>
       <aside class="box game-picker" aria-labelledby="games-title">
-        <header class="box-head"><h2 id="games-title">Партии</h2><button id="logout" type="button" hidden>Выйти</button></header>
+        <header class="box-head"><h2 id="games-title">Партии</h2><button id="logout" type="button">Выйти</button></header>
         <div class="box-body">
-          <form id="auth" autocomplete="off">
-            <label for="token">Токен панели</label>
-            <div class="auth-entry"><input id="token" type="password" autocomplete="off" required><button type="submit" class="primary">Войти</button></div>
-          </form>
-          <label id="follow-label" class="caption follow-session" hidden><input id="follow-latest" type="checkbox" checked> Следить за последней</label>
-          <div id="filters" class="filters" hidden>
+          <label id="follow-label" class="caption follow-session"><input id="follow-latest" type="checkbox" checked> Следить за последней</label>
+          <div id="filters" class="filters">
             <label class="caption game-search">Поиск партии<input type="search" id="game-search" placeholder="Домен или ID" autocomplete="off"></label>
             <label class="caption">Состояние<select id="state-filter"><option value="">Все</option><option value="active">Идут</option><option value="ended">Завершены</option></select></label>
             <label class="caption">Режим<select id="mode-filter"><option value="">Все</option><option value="check">Проверка</option><option value="practice">Тренировка</option><option value="round">Раунд</option><option value="unknown">Неизвестен</option></select></label>
@@ -292,8 +286,8 @@
           </div>
           <p id="game-message" class="notice" role="status" hidden></p>
           <p id="selection-message" class="notice" role="status" hidden></p>
-          <p id="games-summary" class="caption" hidden></p>
-          <div id="archive-controls" class="archive-controls" hidden>
+          <p id="games-summary" class="caption"></p>
+          <div id="archive-controls" class="archive-controls">
             <label class="caption archive-scope">В архив<select id="archive-scope"><option value="all">Все</option><option value="filtered">Отфильтрованные</option><option value="selected">Выбранные</option></select></label>
             <div class="archive-actions">
               <button id="download-zip" class="primary" type="button">Скачать все (ZIP)</button>
@@ -440,9 +434,6 @@
     let zoom = 1;
     let pan = { x: 0, y: 0 };
     let drag;
-    let token = '';
-    let authenticated = false;
-    let passwordSession = false;
     let games = [];
     let recentSignature;
     let selected = null;
@@ -466,6 +457,7 @@
       const signal = options.signal ? AbortSignal.any([timeout, options.signal]) : timeout;
       const response = await fetch(path, { cache: 'no-store', ...options, signal });
       if (!response.ok) {
+        if (response.status === 401 || (response.status === 403 && (path === '/api/status' || path === '/api/games'))) showLogin();
         const error = new Error(`HTTP ${response.status}`);
         error.status = response.status;
         throw error;
@@ -498,6 +490,8 @@
           return;
         }
         const data = status.value;
+        byId('refresh').hidden = !data.canRestart;
+        byId('toggle-bot').hidden = !data.canControl;
         updateBotState(data.botEnabled);
         byId('version').textContent = `v${data.version}`;
         byId('uptime').textContent = uptime(data.uptimeSeconds);
@@ -538,7 +532,7 @@
     function renderDeleteButton() {
       const button = byId('delete-game');
       const count = markedGames.size;
-      button.hidden = !authenticated || (!game && count === 0);
+      button.hidden = !game && count === 0;
       button.disabled = Boolean(deleteRequest);
       button.textContent = deleteRequest ? 'Удаляем…' :
         count ? `Удалить выбранные партии (${count})` : 'Удалить выбранные партии';
@@ -624,17 +618,6 @@
       if (activeExport !== undefined) Array.from(list.querySelectorAll('input')).find(input => input.dataset.exportId === activeExport)?.focus({ preventScroll: true });
     }
 
-    function setAuthenticated(value) {
-      authenticated = value;
-      byId('auth').hidden = value;
-      byId('logout').hidden = !value;
-      byId('filters').hidden = !value;
-      byId('follow-label').hidden = !value;
-      byId('games-summary').hidden = !value;
-      byId('archive-controls').hidden = !value;
-      byId('recent').hidden = !value;
-    }
-
     function renderRecent(moves) {
       byId('recent-table').hidden = !moves.length;
       byId('recent-empty').hidden = Boolean(moves.length);
@@ -669,54 +652,24 @@
       }
     }
 
-    function clearGames() {
-      gamesRequest?.abort();
-      gamesRequest = null;
-      token = '';
-      archiveRequest?.abort();
-      deleteRequest?.abort();
-      deleteRequest = null;
-      notice('archive-message', '');
-      markedGames.clear();
-      byId('archive-scope').value = 'all';
-      byId('game-sort').value = 'new';
-      selected = null;
-      games = [];
-      game = null;
-      setAuthenticated(false);
-      byId('games-loading').hidden = true;
-      byId('board-loading').hidden = true;
-      byId('follow-latest').checked = true;
-      notice('selection-message', '');
-      byId('mode-filter').value = '';
-      byId('state-filter').value = '';
-      byId('game-search').value = '';
-      byId('color-filter').value = '';
-      resetReplay();
-      renderRecent([]);
-      notice('recent-message', '');
-      renderGames();
-      renderGame();
+    function showLogin() {
+      if (document.body.hidden) return;
+      document.body.hidden = true;
+      location.replace('/');
     }
 
-    function authHeaders() {
-      return token ? { Authorization: `Bearer ${token}` } : {};
-    }
-
-    async function refreshGames(force = false, checkAvailability = false) {
-      if ((!token && !authenticated && !checkAvailability) || (gamesRequest && !force)) return;
+    async function refreshGames(force = false) {
+      if (gamesRequest && !force) return;
       gamesRequest?.abort();
       const controller = new AbortController();
       gamesRequest = controller;
-      const options = { signal: controller.signal, headers: authHeaders() };
+      const options = { signal: controller.signal };
       let recentRequest;
-      if (!games.length && token) byId('games-loading').hidden = false;
+      if (!games.length) byId('games-loading').hidden = false;
       try {
         const data = await fetchJson('/api/games', options);
         if (controller.signal.aborted) return;
         games = data;
-        passwordSession = !token;
-        setAuthenticated(true);
         recentRequest = refreshRecent(options);
         const items = filteredGames();
         selectAvailable(items);
@@ -737,12 +690,7 @@
         }
       } catch (error) {
         if (controller.signal.aborted) return;
-        if (error.status === 401 && !token && !authenticated) return;
-        if (error.status === 401 || error.status === 403) {
-          clearGames();
-          notice('game-message', error.status === 401 ? 'Неверный токен' : 'Задайте DASHBOARD_TOKEN на сервере и перезапустите контейнер');
-          return;
-        }
+        if (error.status === 401 || error.status === 403) return;
         if (!game) renderGame();
         notice('game-message', error.status === 404 ? 'Эта партия уже недоступна. Список обновится.' : 'История сейчас недоступна. Попробуйте обновить панель.');
       } finally {
@@ -843,7 +791,7 @@
       byId('game-meta').textContent = snapshot ? `${snapshot.field.width} × ${snapshot.field.height} · ${score(snapshot.score)}` : '';
       byId('empty-board').hidden = Boolean(snapshot);
       byId('board-loading').hidden = true;
-      byId('empty-board').textContent = authenticated ? 'Здесь появится поле партии.' : 'Войдите в историю и выберите партию.';
+      byId('empty-board').textContent = 'Здесь появится поле партии.';
       byId('board').hidden = !snapshot;
       byId('game-detail').hidden = !snapshot;
       byId('export').hidden = !snapshot;
@@ -1154,7 +1102,7 @@
       notice('archive-message', 'Готовлю архив…');
       try {
         const response = await fetch('/api/games/export.zip' + (query.size ? '?' + query : ''), {
-          headers: authHeaders(), cache: 'no-store',
+          cache: 'no-store',
           signal: AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]),
         });
         if (!response.ok) {
@@ -1206,28 +1154,15 @@
       updateTheme();
     });
     systemTheme.addEventListener('change', updateTheme);
-    byId('auth').addEventListener('submit', (event) => {
-      event.preventDefault();
-      token = byId('token').value.trim();
-      byId('token').value = '';
-      notice('game-message', token ? 'Проверяем токен…' : 'Введите токен панели.');
-      refreshGames(true);
-    });
     byId('logout').addEventListener('click', async () => {
-      if (passwordSession) {
-        try {
-          await fetchJson('/api/dashboard-session/logout', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-          });
-        } catch {
-          notice('selection-message', 'Не удалось выйти. Попробуйте ещё раз.');
-          return;
-        }
+      try {
+        await fetchJson('/api/dashboard-session/logout', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+        });
+        showLogin();
+      } catch {
+        notice('selection-message', 'Не удалось выйти. Попробуйте ещё раз.');
       }
-      passwordSession = false;
-      clearGames();
-      notice('game-message', '');
-      byId('token').focus();
     });
     byId('games').addEventListener('click', (event) => {
       const button = event.target.closest('button[data-id]');
@@ -1378,7 +1313,6 @@
     });
     const restartDialog = byId('restart-dialog');
     const restartForm = byId('restart-form');
-    const restartPassword = byId('restart-password');
     const restartSubmit = restartForm.querySelector('[type=submit]');
     const restartCancel = byId('restart-cancel');
 
@@ -1396,11 +1330,10 @@
     }
     function openControl(enabled) {
       requestedState = enabled;
-      byId('restart-label').textContent = enabled === undefined ? 'Пароль для перезапуска бота' :
-        enabled ? 'Пароль для включения бота' : 'Пароль для выключения бота';
+      byId('restart-label').textContent = enabled === undefined ? 'Перезапустить бота?' :
+        enabled ? 'Включить бота?' : 'Выключить бота?';
       restartSubmit.textContent = enabled === undefined ? 'Перезапустить' :
         enabled ? 'Включить бота' : 'Выключить бота';
-      restartPassword.value = '';
       notice('restart-message', '');
       restartDialog.showModal();
     }
@@ -1412,19 +1345,13 @@
     });
     restartForm.addEventListener('submit', async event => {
       event.preventDefault();
-      if (!authenticated) {
-        notice('restart-message', 'Сначала войдите в историю партий.');
-        return;
-      }
-      const password = restartPassword.value;
-      restartPassword.value = '';
       restartSubmit.disabled = restartCancel.disabled = true;
       notice('restart-message', 'Отправляем запрос…');
       try {
         if (requestedState !== undefined) {
           const state = await fetchJson('/api/bot-state', {
-            method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password, enabled: requestedState }),
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: requestedState }),
           });
           updateBotState(state.botEnabled);
           restartDialog.close();
@@ -1433,8 +1360,8 @@
           return;
         }
         const { instanceId } = await fetchJson('/api/restart', {
-          method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password }),
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: '{}',
         });
         notice('restart-message', 'Ждём запуска бота…');
         const deadline = Date.now() + 30_000;
@@ -1443,22 +1370,13 @@
           const status = await fetchJson('/api/status', { signal: AbortSignal.timeout(2000) }).catch(() => null);
           if (status?.instanceId && status.instanceId !== instanceId) {
             restartDialog.close();
-            if (passwordSession) {
-              passwordSession = false;
-              clearGames();
-              notice('selection-message', 'Бот перезапущен. Войдите снова, чтобы открыть историю.');
-            } else {
-              await refreshGames(true);
-              notice('selection-message', 'Бот перезапущен.');
-            }
-            refreshStatus();
+            showLogin();
             return;
           }
         }
         notice('restart-message', 'Бот ещё не ответил после перезапуска.');
       } catch (error) {
-        notice('restart-message', error.status === 401 ? 'Неверный пароль или истекла сессия.' :
-          error.status === 429 ? 'Слишком много попыток. Попробуйте через минуту.' :
+        notice('restart-message', error.status === 403 ? 'Для управления ботом нужен вход через «Наш токен».' :
           error.status === 503 ? 'Управление ботом не настроено на сервере.' : 'Не удалось выполнить команду.');
       } finally {
         restartSubmit.disabled = restartCancel.disabled = false;
@@ -1466,7 +1384,7 @@
     });
 
     byId('delete-game').addEventListener('click', async () => {
-      if (!authenticated || deleteRequest) return;
+      if (deleteRequest) return;
       const ids = markedGames.size ? [...markedGames] : game ? [game.id] : [];
       if (!ids.length) return;
       const question = ids.length === 1 ? `Удалить партию «${ids[0]}» из истории?` :
@@ -1477,7 +1395,7 @@
       renderDeleteButton();
       notice('selection-message', 'Удаляем партии из истории…');
       try {
-        const options = { method: 'DELETE', headers: authHeaders(), signal: controller.signal };
+        const options = { method: 'DELETE', signal: controller.signal };
         const results = await Promise.allSettled(ids.map(id => fetchJson(gameDetailPath(id), options)));
         if (controller.signal.aborted) return;
         const removed = new Set();
@@ -1525,7 +1443,6 @@
     byId('brand-icon').src = document.querySelector('link[rel=icon]').href;
     updateTheme();
     schedule();
-    refreshGames(false, true);
   </script>
 </body>
 </html>
