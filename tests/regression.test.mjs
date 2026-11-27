@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { applyMove, chooseMove } from '../bot/index.js';
 import { DotsGame } from './support/arena-reference.mjs';
 
@@ -117,5 +118,46 @@ test('sandbox#40, ход 55: красные закрывают угрозу и �
       return captured.score.red >= 7;
     });
     assert.ok(preservesCapture, `Ответ синих: ${reply}`);
+  }
+});
+
+test('sandbox#44, ход 323: бот занимает клетку подготовки захвата 12 точек', (t) => {
+  const { width, height, placements } = JSON.parse(readFileSync(new URL('./fixtures/sandbox-44-323.json', import.meta.url)));
+  const arena = DotsGame.fromMoves(width, height, placements.map(at => [at % width, Math.floor(at / width)]));
+  const difference = board => board.scoreOf(1) - board.scoreOf(2);
+  assert.equal(difference(arena), 8);
+
+  const fork = arena.clone();
+  fork.play(13, 19);
+  fork.play(11, 0);
+  for (const answer of fork.freeCells()) {
+    const after = fork.clone();
+    after.play(...answer);
+    assert.ok([[10, 0], [10, 1]].some(closure => {
+      if (!after.isFree(...closure)) return false;
+      const leaf = after.clone();
+      leaf.play(...closure);
+      return difference(leaf) <= -4;
+    }));
+  }
+
+  const clock = t.mock.method(performance, 'now', () => 0);
+  const move = chooseMove({ ...arena.snapshot(), you: 'red', moveTimeoutMs: 5000, timeLeftMs: 900_000 });
+  clock.mock.restore();
+  assert.deepEqual(move, { x: 11, y: 0 });
+
+  arena.play(move.x, move.y);
+  for (const reply of arena.freeCells()) {
+    const after = arena.clone();
+    after.play(...reply);
+    assert.ok(after.freeCells().some(answer => {
+      const defended = after.clone();
+      defended.play(...answer);
+      return defended.freeCells().every(counter => {
+        const leaf = defended.clone();
+        leaf.play(...counter);
+        return difference(leaf) >= 8;
+      });
+    }), `Ответ синих: ${reply}`);
   }
 });
