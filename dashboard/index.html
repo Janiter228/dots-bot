@@ -240,7 +240,7 @@
     </section>
     <div class="workspace">
       <article class="box" aria-labelledby="game-title">
-        <header class="box-head"><h2 id="game-title">Поле партии</h2><div class="tools"><span class="meta" id="game-meta"></span><button id="export" type="button" hidden>Скачать JSON</button><button id="delete-game" type="button" hidden>Удалить партию</button></div></header>
+        <header class="box-head"><h2 id="game-title">Поле партии</h2><div class="tools"><span class="meta" id="game-meta"></span><button id="export" type="button" hidden>Скачать JSON</button><button id="delete-game" type="button" hidden>Удалить выбранные партии</button></div></header>
         <div id="game-analysis" class="box-body game-analysis" hidden>
           <h3 id="game-outcome"></h3>
           <div id="analysis-bar"></div>
@@ -432,6 +432,7 @@
     const eventNames = { capture: 'Захват', loss: 'Потеря', fallback: 'Запасной' };
     const markedGames = new Set();
     let archiveRequest;
+    let deleteRequest;
     let framesByMove = new Map();
     let shownPosition;
     let chartPoints = [];
@@ -534,6 +535,15 @@
       game = null;
     }
 
+    function renderDeleteButton() {
+      const button = byId('delete-game');
+      const count = markedGames.size;
+      button.hidden = !authenticated || (!game && count === 0);
+      button.disabled = Boolean(deleteRequest);
+      button.textContent = deleteRequest ? 'Удаляем…' :
+        count ? `Удалить выбранные партии (${count})` : 'Удалить выбранные партии';
+    }
+
     function renderGames() {
       const list = byId('games');
       const scored = games.filter((item) => item.score.red !== null && item.score.blue !== null);
@@ -545,6 +555,7 @@
       const activeExport = focused.exportId;
       const items = filteredGames();
       for (const id of markedGames) if (!games.some(item => item.id === id)) markedGames.delete(id);
+      renderDeleteButton();
       const sort = byId('game-sort').value;
       const ownScore = item => (item.finalScore ?? item.score)[item.you] ?? -1;
       if (sort === 'old') items.sort((a, b) => a.startedAt - b.startedAt);
@@ -563,7 +574,7 @@
         checkbox.type = 'checkbox';
         checkbox.checked = markedGames.has(item.id);
         checkbox.dataset.exportId = item.id;
-        checkbox.setAttribute('aria-label', `Включить в ZIP: ${item.title ?? item.id}`);
+        checkbox.setAttribute('aria-label', `Отметить партию: ${item.title ?? item.id}`);
         const button = document.createElement('button');
         const title = document.createElement('span');
         const details = document.createElement('span');
@@ -663,6 +674,8 @@
       gamesRequest = null;
       token = '';
       archiveRequest?.abort();
+      deleteRequest?.abort();
+      deleteRequest = null;
       notice('archive-message', '');
       markedGames.clear();
       byId('archive-scope').value = 'all';
@@ -834,7 +847,7 @@
       byId('board').hidden = !snapshot;
       byId('game-detail').hidden = !snapshot;
       byId('export').hidden = !snapshot;
-      byId('delete-game').hidden = !snapshot;
+      renderDeleteButton();
       renderAnalysis();
       renderTurns();
       const byMove = new Map();
@@ -1274,6 +1287,7 @@
       if (!id) return;
       if (event.target.checked) markedGames.add(id);
       else markedGames.delete(id);
+      renderDeleteButton();
     });
     byId('game-sort').addEventListener('change', renderGames);
     byId('turn-filter').addEventListener('change', renderTurns);
@@ -1452,18 +1466,56 @@
     });
 
     byId('delete-game').addEventListener('click', async () => {
-      const id = game?.id;
-      if (!id || !confirm(`Удалить партию «${id}» из истории?`)) return;
-      const button = byId('delete-game');
-      button.disabled = true;
+      if (!authenticated || deleteRequest) return;
+      const ids = markedGames.size ? [...markedGames] : game ? [game.id] : [];
+      if (!ids.length) return;
+      const question = ids.length === 1 ? `Удалить партию «${ids[0]}» из истории?` :
+        `Удалить выбранные партии из истории? Количество: ${ids.length}.`;
+      if (!confirm(question)) return;
+      const controller = new AbortController();
+      deleteRequest = controller;
+      renderDeleteButton();
+      notice('selection-message', 'Удаляем партии из истории…');
       try {
-        await fetchJson(gameDetailPath(id), { method: 'DELETE', headers: authHeaders() });
+        const options = { method: 'DELETE', headers: authHeaders(), signal: controller.signal };
+        const results = await Promise.allSettled(ids.map(id => fetchJson(gameDetailPath(id), options)));
+        if (controller.signal.aborted) return;
+        const removed = new Set();
+        const missing = [];
+        const failed = [];
+        let deleted = 0;
+        for (const [index, result] of results.entries()) {
+          const id = ids[index];
+          if (result.status === 'fulfilled') {
+            removed.add(id);
+            deleted++;
+          } else if (result.reason.status === 404) {
+            removed.add(id);
+            missing.push(id);
+          } else {
+            failed.push(id);
+          }
+        }
+        for (const id of removed) markedGames.delete(id);
+        games = games.filter(item => !removed.has(item.id));
+        if (removed.has(selected)) {
+          selected = null;
+          game = null;
+          resetReplay();
+          renderGame();
+        }
+        renderGames();
         await refreshGames(true);
-        notice('selection-message', 'Партия удалена.');
-      } catch {
-        notice('selection-message', 'Не удалось удалить партию.');
+        if (controller.signal.aborted) return;
+        const message = [`Удалено партий: ${deleted} из ${ids.length}.`];
+        if (missing.length) message.push(`Уже отсутствуют: ${missing.join(', ')}.`);
+        if (failed.length) message.push(`Не удалось удалить: ${failed.join(', ')}.`);
+        notice('selection-message', message.join(' '));
       } finally {
-        button.disabled = false;
+        if (deleteRequest === controller) {
+          deleteRequest = null;
+          renderDeleteButton();
+        }
       }
     });
     document.addEventListener('visibilitychange', schedule);
